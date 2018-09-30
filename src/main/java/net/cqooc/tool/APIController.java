@@ -164,21 +164,21 @@ public class APIController {
             return;
         }
 
-//        getAllChapter();
-//
-//        //做测试
-//        if(this.chapters != null){
-//            int count = 0;
-//            for(Chapter c : chapters){
-//                System.out.println(c.getTitle());
-//                getLessonFun(c.getId());
-//                count++;
-//            }
-//            System.out.println(realName + "的测试 讨论 视频 资源 共"+count+"个,已看完 。。。" );
-//        }
-//
-//
-//        //做项目作业
+        getAllChapter();
+
+        //做测试
+        if(this.chapters != null){
+            int count = 0;
+            for(Chapter c : chapters){
+                System.out.println(c.getTitle());
+                getLessonFun(c.getId());
+                count++;
+            }
+            System.out.println(realName + "的测试 讨论 视频 资源 共"+count+"个,已看完 。。。" );
+        }
+
+
+        //做项目作业
         onTask();
 
         //做大试卷
@@ -187,6 +187,12 @@ public class APIController {
 
     private void doExam() {
         System.out.println("等待三分钟 完成试卷");
+//        new Thread(new Runnable() {
+//            @Override
+//            public void run() {
+//
+//            }
+//        }).start();
         try {
             Thread.sleep(3*60*1000);
         } catch (InterruptedException e) {
@@ -303,7 +309,7 @@ public class APIController {
     private void doTask() {
         if(this.task != null && this.task.size()>0){
             for(Chapter1 chapter1 : this.task){
-                String title = chapter1.getChapter().getTitle();
+                String title = chapter1.getChapter().getTitle().trim();
                 String taskId = chapter1.getId();
                 String answer = answersCache.get(title);
 //                String answer = "调酒工具、计量与方法";
