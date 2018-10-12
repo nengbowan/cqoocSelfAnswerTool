@@ -49,8 +49,6 @@ public class APIController {
 
     private HashMap<String, String> cookieMap = null;
 
-    private String userId;
-
     private CaptchaInfo captchaInfo;
 
     private String username;
@@ -69,8 +67,6 @@ public class APIController {
 
     private String xsid; //登陆之后的授权cookie
 
-    private String courseId = "334564673";
-
     private List<Lesson> lessons = new ArrayList<>();
 
     private String chapterId ;
@@ -79,7 +75,6 @@ public class APIController {
 
     private String sessionId;
 
-    private List<Chapter> chapters = new ArrayList<>();
 
     private boolean auth = false;//是否登录需要授权
 
@@ -87,7 +82,13 @@ public class APIController {
 
     private List<Chapter1> task;
 
-    private boolean onlyDoTask;
+    //完成了之后 要点击一次 测试 否则学习进度是 75%
+    private HashMap<String,String> _obj;
+
+    List<Course0> allCourse ; //完全的课程
+
+    List<Course0> courseIng; //进行中的课程
+
 
     private boolean doExamFlag;
     public APIController(){
@@ -95,35 +96,23 @@ public class APIController {
     }
 
     //默认只刷任务
-    public APIController(String username , String password, boolean isAuth , boolean onlyDoTask , boolean doExamFlag){
-
+    public APIController(String username , String password, boolean isAuth ){
         this.username = username;
-
         this.password = password;
-
-        this.onlyDoTask = onlyDoTask;
-
         this.auth = isAuth;
-
         if(auth){
             //读验证码的key 和 验证码的值
             setCapchaInfo();
             //解析成真实图片识别 并放入captchainfo
             String verifyCode = parseImg2String();
-
             ResultDTO captchaToken = captchaC(verifyCode);
-
             if(captchaToken !=null ){
                 this.captchaToken = JsonObjectUtil.getAttrValue(captchaToken.getResponse() , "captchaToken");
             }
             onLogin();
-
             doLogin();
-
-
         }else{
             onLogin();
-
             doLogin();
 
         }
@@ -134,263 +123,270 @@ public class APIController {
             System.out.println(this.username + " 登录授权未通过...");
             System.exit(0);
         }
-
-
         //获取提交试卷时候的唯一识别id码
         String sessionIdUrl = "http://www.cqooc.net/user/session?xsid="+this.xsid+"&ts="+System.currentTimeMillis()+"";
         String sessionIdDto = HttpClientUtil.getPageByURLAndCookie(sessionIdUrl , this.cookieMap , null);
         if(sessionIdDto != null) {
             this.sessionId = JsonObjectUtil.getAttrValue(sessionIdDto, "id");
         }
+        setCourse();
+        doCourse();
 
-        //获取选课的ID
-        setMoocId();
-
-//        String realNameUrl = "http://www.cqooc.net/account/session/api/profile/get?username="+this.username+"&ts="+System.currentTimeMillis()+"";
-//
-//
-//        String realNameDto = HttpClientUtil.getPageByURLAndCookie(realNameUrl , this.cookieMap , null);
-//        if(realNameDto != null){
-//            this.realName = JsonObjectUtil.getAttrValue(realNameDto , "name");
-//        }
-
-        if(doExamFlag){
-            doExam();
-            return;
-        }
-
-        if(onlyDoTask){
-            onTask();
-            return;
-        }
-
-        getAllChapter();
-
-        //做测试
-        if(this.chapters != null){
-            int count = 0;
-            for(Chapter c : chapters){
-                System.out.println(c.getTitle());
-                getLessonFun(c.getId());
-                count++;
-            }
-            System.out.println(realName + "的测试 讨论 视频 资源 共"+count+"个,已看完 。。。" );
-        }
-
-
-        //做项目作业
-        onTask();
-
-        //做大试卷
-        doExam();
     }
 
-    private void doExam() {
-        System.out.println("等待三分钟 完成试卷");
-//        new Thread(new Runnable() {
-//            @Override
-//            public void run() {
-//
-//            }
-//        }).start();
-        try {
-            Thread.sleep(3*60*1000);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
+    private void doCourse() {
+        int index = -1;
+        if(this.courseIng !=null && this.courseIng.size()>0){
+            for(Course0 course0 : this.courseIng){
+                index++;
+                if(index == 0 ){
+                    this.realName = course0.getName();
+                }
+                String courseId = course0.getCourseId();
+                this.moocCid = course0.getId();
+                List<Chapter> chapters = getAllChapter(courseId);
+                //做测试
+                if(chapters != null){
+                    int count = 0;
+                    for(Chapter c : chapters){
+                        System.out.println(c.getTitle());
+                        getLessonFun(courseId , c.getId() );
+                        count++;
+                        String testId = _obj.get("testId");
+                        String currentLessionId = _obj.get("currentLessonId");
+                        String parentLessionId = _obj.get("parentLessonId");
+                        //tid 是 testid structure是学科id sid是lession编号
+                        doTest(testId, courseId , currentLessionId ,  parentLessionId , course0.getId());
+                        System.out.println("最后一次点击测试刷新");
+
+//                        new Thread(new Runnable() {
+//                            @Override
+//                            public void run() {
+////                                try {
+////                                    Thread.sleep(30000);
+////                                } catch (InterruptedException e) {
+////                                    e.printStackTrace();
+////                                }
+//                                String testId = _obj.get("testId");
+//                                String currentLessionId = _obj.get("currentLessonId");
+//                                String parentLessionId = _obj.get("parentLessonId");
+//                                //tid 是 testid structure是学科id sid是lession编号
+//                                doTest(testId, courseId , currentLessionId ,  parentLessionId , course0.getId());
+//                                System.out.println("最后一次点击测试刷新");
+//                            }
+//                        }).start();
+                    }
+                    System.out.println(realName +course0.getTitle() +"的测试 讨论 视频 资源 共"+count+"个,已看完 。。。" );
+                }
+
+                //做项目作业
+                getAllTask(courseId);
+                doTask(courseId);
+                //做大试卷
+                doExam(courseId);
+            }
         }
-        String getPaperUrl = this.baseUrl + "/json/exams?select=id,title&status=1&courseId="+this.courseId+"&limit=99&sortby=id&reverse=true&ts="+System.currentTimeMillis()+"";
-        String resp = HttpClientUtil.getPageByURLAndCookie(getPaperUrl , this.cookieMap , null);
-        String examId = JsonObjectUtil.getArray(resp , "data" , 0 , "id");
-        if(examId != null && !examId.equals("")){
-            System.out.println("正在做大试卷");
-            //获取大试卷答案
-            String getAnswerUrl = this.baseUrl + "/json/eps?ownerId="+this.sessionId+"&examId="+examId+"&ts="+System.currentTimeMillis()+"";
-            String answerResp = HttpClientUtil.getPageByURLAndCookie(getAnswerUrl , this.cookieMap , null);
-            //fastjson真好用啊 给个赞!
-            ExamDTO examDTO = JSONObject.parseObject(answerResp , ExamDTO.class);
+    }
+
+    private void doExam(String courseId) {
+        //开启线程三分钟后提交试卷
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                System.out.println("等待三分钟 完成试卷 开启多线程");
+                try {
+                    Thread.sleep(3*60*1000);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                try {
+                    String getPaperUrl = baseUrl + "/json/exams?select=id,title&status=1&courseId=" + courseId + "&limit=99&sortby=id&reverse=true&ts=" + System.currentTimeMillis() + "";
+                    String resp = HttpClientUtil.getPageByURLAndCookie(getPaperUrl, cookieMap, null);
+                    if(!resp.equals("{\"meta\":{\"total\":\"0\",\"start\":\"1\",\"size\":\"0\"},\"data\":[]}")){
+                        String examId = JsonObjectUtil.getArray(resp, "data", 0, "id");
+                        if (examId != null && !examId.equals("")) {
+                            System.out.println("正在做大试卷");
+                            //获取大试卷答案
+                            String getAnswerUrl = baseUrl + "/json/eps?ownerId=" +sessionId + "&examId=" + examId + "&ts=" + System.currentTimeMillis() + "";
+                            String answerResp = HttpClientUtil.getPageByURLAndCookie(getAnswerUrl, cookieMap, null);
+                            //fastjson真好用啊 给个赞!
+                            ExamDTO examDTO = JSONObject.parseObject(answerResp, ExamDTO.class);
 
 
+//                        String realName = realName;
+                            StringBuffer postParam = new StringBuffer();
+                            //获取ownerId 代表session用户
 
-            String realName = this.realName;
-            StringBuffer postParam = new StringBuffer();
-            //获取ownerId 代表session用户
+                            String moocId = JsonObjectUtil.getArray(answerResp, "data", 0, "id");
+                            postParam.append("{\n" +
+                                    "\t\"id\": " + moocId + ",\n" +
+                                    "\t\"ownerId\": " + sessionId + ",\n" +
+                                    "\t\"username\": \"" + username + "\",\n" +
+                                    "\t\"name\": \"" + realName + "\",\n" +
+                                    "\t\"examId\": \"" + examId + "\",\n" +
+                                    "\t\"courseId\": \"" + courseId + "\",\n" +
+                                    "\t\"answers\": {\n");
+                            //遍历paper
+                            Paper paper = examDTO.getData().get(0);
+                            if (paper != null) {
+                                if (paper.getBody() != null) {
+                                    List<PaperQuestion> paperQuestions = paper.getBody().stream().filter(
+                                            (PaperQuestion paperQuestion) -> {
+                                                return paperQuestion.getDesc() != null && !paperQuestion.getDesc().equals("");
+                                            }
+                                    ).collect(Collectors.toList());
+                                    int index = 0;
+                                    for (PaperQuestion paperQuestion : paperQuestions) {
+                                        //单选题 0
+                                        if ("0".equals(paperQuestion.getType())) {
+                                            List<Question> questions = paperQuestion.getQuestions();
+                                            if (questions != null && questions.size() > 0) {
+                                                for (Question question : questions) {
+                                                    //处理下单选题 返回答案为数组类型 ["0"]
+                                                    postParam.append("\"q" + question.getId() + "\":\"" + question.getBody().getAnswer().replaceAll("\\[\"", "").replaceAll("\"]", "") + "\",");
+                                                }
+                                            }
+                                            if (index == paperQuestions.size() - 1) {
+                                                postParam.replace(postParam.length() - 1, postParam.length(), "");
+                                            }
+                                            index++;
+                                            //多选题 1
+                                        } else if ("1".equals(paperQuestion.getType())) {
+                                            List<Question> questions = paperQuestion.getQuestions();
+                                            if (questions != null && questions.size() > 0) {
+                                                for (Question question : questions) {
+                                                    postParam.append("\"q" + question.getId() + "\":" + question.getBody().getAnswer() + ",");
+                                                }
+                                            }
+                                            if (index == paperQuestions.size() - 1) {
+                                                postParam.replace(postParam.length() - 1, postParam.length(), "");
+                                            }
+                                            index++;
+                                            //判断题 4
+                                        } else if ("4".equals(paperQuestion.getType())) {
+                                            List<Question> questions = paperQuestion.getQuestions();
+                                            if (questions != null && questions.size() > 0) {
+                                                for (Question question : questions) {
+                                                    if (question.getBody().getAnswer() == null || question.getBody().getAnswer().equals("")) {
+                                                        //没有答案 采用默认的答案
+                                                        postParam.append("\"q" + question.getId() + "\":\"" + "1" + "\",");
+                                                    } else
+                                                        postParam.append("\"q" + question.getId() + "\":\"" + question.getBody().getAnswer().replaceAll("\\[\"", "").replaceAll("\"]", "") + "\",");
+                                                }
+                                            }
+                                            if (index == paperQuestions.size() - 1) {
+                                                postParam.replace(postParam.length() - 1, postParam.length(), "");
+                                            }
+                                            index++;
+                                        }
+                                    }
 
-            String moocId = JsonObjectUtil.getArray(answerResp , "data" , 0 , "id");
-            postParam.append("{\n" +
-                    "\t\"id\": "+moocId+",\n" +
-                    "\t\"ownerId\": "+this.sessionId+",\n" +
-                    "\t\"username\": \""+this.username+"\",\n" +
-                    "\t\"name\": \""+realName+"\",\n" +
-                    "\t\"examId\": \""+examId+"\",\n" +
-                    "\t\"courseId\": \""+this.courseId+"\",\n" +
-                    "\t\"answers\": {\n");
-            //遍历paper
-            Paper paper = examDTO.getData().get(0);
-            if(paper != null){
-                if(paper.getBody() != null) {
-                    List<PaperQuestion> paperQuestions = paper.getBody().stream().filter(
-                            (PaperQuestion paperQuestion) -> {
-                                return paperQuestion.getDesc() != null && !paperQuestion.getDesc().equals("");
-                            }
-                    ).collect(Collectors.toList());
-                    int index = 0 ;
-                    for(PaperQuestion paperQuestion : paperQuestions){
-                        //单选题 0
-                        if("0".equals(paperQuestion.getType())){
-                            List<Question> questions = paperQuestion.getQuestions();
-                            if(questions != null && questions.size()>0){
-                                for(Question question : questions){
-                                    //处理下单选题 返回答案为数组类型 ["0"]
-                                    postParam.append("\"q" + question.getId() + "\":\"" + question.getBody().getAnswer().replaceAll("\\[\"","").replaceAll("\"]", "") + "\",");
                                 }
+
                             }
-                            if(index == paperQuestions.size() -1 ){
-                                postParam.replace(postParam.length() -1 , postParam.length() , "");
-                            }
-                            index++;
-                            //多选题 1
-                        }else if("1".equals(paperQuestion.getType())){
-                            List<Question> questions = paperQuestion.getQuestions();
-                            if(questions != null && questions.size()>0){
-                                for(Question question : questions){
-                                    postParam.append("\"q" + question.getId() + "\":" + question.getBody().getAnswer() + ",");
-                                }
-                            }
-                            if(index == paperQuestions.size() -1 ){
-                                postParam.replace(postParam.length() -1 , postParam.length() , "");
-                            }
-                            index++;
-                            //判断题 4
-                        }else if("4".equals(paperQuestion.getType())){
-                            List<Question> questions = paperQuestion.getQuestions();
-                            if(questions != null && questions.size()>0){
-                                for(Question question : questions){
-                                    if(question.getBody().getAnswer() == null||question.getBody().getAnswer().equals("")){
-                                        //没有答案 采用默认的答案
-                                        postParam.append("\"q" + question.getId() + "\":\"" + "1" + "\",");
-                                    }else
-                                        postParam.append("\"q" + question.getId() + "\":\"" + question.getBody().getAnswer().replaceAll("\\[\"","").replaceAll("\"]", "") + "\",");
-                                }
-                            }
-                            if(index == paperQuestions.size() -1 ){
-                                postParam.replace(postParam.length() -1 , postParam.length() , "");
-                            }
-                            index++;
+                            postParam.append("\t}\n" +
+                                    "}")
+                            ;
+
+                            String doExamUrl = baseUrl + "/exam/api/student/do";
+                            ResultDTO submitResp = HttpClientUtil.postByURLJSON(doExamUrl, cookieMap, postParam.toString());
+                            System.out.println("大试卷 返回" + submitResp.getResponse());
+                            return;
+                        } else {
+                            System.out.println("大试卷不存在，不做了");
+                            return;
                         }
                     }
 
+                }catch (Exception e){
+                    e.printStackTrace();
                 }
-
             }
-            postParam.append("\t}\n" +
-                    "}")
-            ;
+        }).start();
 
-            String doExamUrl = this.baseUrl +  "/exam/api/student/do";
-            ResultDTO submitResp = HttpClientUtil.postByURLJSON( doExamUrl , this.cookieMap , postParam.toString());
-        System.out.println("大试卷 返回"+submitResp.getResponse());
-            return;
-        }else{
-            System.out.println("大试卷不存在，不做了");
-            return;
-        }
 
 
     }
 
-    private void onTask() {
-
-        getAllTask();
-
-        doTask();
-
-    }
-
-    private void doTask() {
-        if(this.task != null && this.task.size()>0){
-            for(Chapter1 chapter1 : this.task){
-                String title = chapter1.getChapter().getTitle().trim();
-                String taskId = chapter1.getId();
-                String answer = answersCache.get(title);
+    private void doTask(String courseId) {
+        try {
+            if (this.task != null && this.task.size() > 0) {
+                for (Chapter1 chapter1 : this.task) {
+                    String title = chapter1.getChapter().getTitle().trim();
+                    String taskId = chapter1.getId();
+                    String answer = answersCache.get(title);
 //                String answer = "调酒工具、计量与方法";
-                if(answer != null && !answer.equals("")){
-                    String doTaskUrl = "http://www.cqooc.net/json/task/results";
+                    if (answer != null && !answer.equals("")) {
+                        String doTaskUrl = "http://www.cqooc.net/json/task/results";
 
-                    String postParam = new HashMapUtil().put("attachment","")
-                            .put("content" , "<p>"+answer + "</p>")
-                            .put("courseId",this.courseId)
-                            .put("name",this.realName)
-                            .put("ownerId",this.sessionId)
-                            .put("status","2")
-                            .put("taskId",taskId)
-                            .put("username",this.username)
-                            .toJsonStr();
-                    ResultDTO resultDTO = HttpClientUtil.postByURLJSON(doTaskUrl , this.cookieMap , postParam);
-                    System.out.println(title  +resultDTO);
-                }else{
-                    System.out.println("题库不包含这种简答题,所以跳过..." + title);
-                    continue;
+                        String postParam = new HashMapUtil().put("attachment", "")
+                                .put("content", "<p>" + answer + "</p>")
+                                .put("courseId", courseId)
+                                .put("name", this.realName)
+                                .put("ownerId", this.sessionId)
+                                .put("status", "2")
+                                .put("taskId", taskId)
+                                .put("username", this.username)
+                                .toJsonStr();
+                        ResultDTO resultDTO = HttpClientUtil.postByURLJSON(doTaskUrl, this.cookieMap, postParam);
+                        System.out.println(title + resultDTO);
+                    } else {
+                        System.out.println("题库不包含这种简答题,所以跳过..." + title);
+                        continue;
+                    }
                 }
             }
+        }catch (Exception e){
+            e.printStackTrace();
         }
-
     }
 
-    private void getAllTask() {
+    private void getAllTask(String courseId) {
 
-        String url = "http://www.cqooc.net/json/tasks?limit=100&start=1&status=1&courseId="+this.courseId+"&sortby=id&reverse=false&select=id,title,unitId,submitEnd&ts="+System.currentTimeMillis()+"";
+        String url = "http://www.cqooc.net/json/tasks?limit=100&start=1&status=1&courseId="+courseId+"&sortby=id&reverse=false&select=id,title,unitId,submitEnd&ts="+System.currentTimeMillis()+"";
         String resp = HttpClientUtil.getPageByURLAndCookie( url , this.cookieMap , null);
         ResultDTO0 result = JSONObject.parseObject(resp , ResultDTO0.class);
         this.task = result.getData();
     }
 
-    private void setMoocId() {
+    private void setCourse() {
         String url = "http://www.cqooc.net/json/mcs?sortby=id&reverse=true&del=2&courseType=2&ownerId="+sessionId+"&limit=20&ts="+System.currentTimeMillis()+"";
         String resp = HttpClientUtil.getPageByURLAndCookie(url , this.cookieMap , null);
-        JSONArray array = JSONObject.parseObject(resp).getJSONArray("data");
-        Course0 course0 = array.getObject(0 , Course0.class);
-        this.moocCid = course0.getId();
-        this.realName = course0.getName();
+
+
+        this.allCourse = JSONObject.parseObject(resp).getJSONArray("data").toJavaList(Course0.class);
+        //进行中的课程定义为分数为0 且课程结束时间大于当前时间
+        this.courseIng = this.allCourse.stream().filter((Course0 course0)->{
+            return course0.getScore().equals("0") && course0.getCourse().getEndDate().compareTo(""+System.currentTimeMillis()) > 0 ;
+        }).collect(Collectors.toList());
+
     }
 
-    private void getAllChapter() {
-        String getAllChapterUrl = "http://www.cqooc.net/json/chapters?status=1&select=id,title,level&courseId=334564673&sortby=selfId&reverse=false&limit=200&start=0&ts="+System.currentTimeMillis()+"";
+
+
+    private List<Chapter> getAllChapter(String courseId) {
+        List<Chapter> res = new ArrayList<>();
+        String getAllChapterUrl = "http://www.cqooc.net/json/chapters?status=1&select=id,title,level&courseId="+courseId+"&sortby=selfId&reverse=false&limit=200&start=0&ts="+System.currentTimeMillis()+"";
         String chapters = HttpClientUtil.getPageByURLAndCookie(getAllChapterUrl , this.cookieMap , null );
         JSONArray chapterArr = JSONObject.parseObject(chapters).getJSONArray("data");
         if(chapterArr != null && chapterArr.size()>0){
             for(int index = 0 ; index < chapterArr.size() ; index++){
-                this.chapters.add(  chapterArr.getObject(index , Chapter.class));
-                this.chapters = this.chapters.stream().filter(
+                res.add(  chapterArr.getObject(index , Chapter.class));
+                res = res.stream().filter(
                         (Chapter chapter)->{return chapter.getLevel().equalsIgnoreCase("2");}
                 ).collect(Collectors.toList());
             }
         }
-        return ;
+        return res;
     }
 
-    private void getLessonFun(String lessionId){
-//        this.chapterId = lessionId;
-        String limit = "100";
-        String url = this.baseUrl + "/json/mooc/lessons?parentId=" + lessionId + "&limit=" + limit + "&sortby=selfId&reverse=false";
-
+    private void getLessonFun(String courseId , String lessionId){
+        String url = this.baseUrl + "/json/mooc/lessons?parentId=" + lessionId + "&limit=100&sortby=selfId&reverse=false";
         String json = HttpClientUtil.getPageByURLAndCookie(url , this.cookieMap , null );
-
-        String total = "0";
-        String size = "0";
-        if(JsonObjectUtil.getAttrValue(json , "meta") != null){
-            total = JsonObjectUtil.getAttrValue(json , "meta" , "total");
-            size = JsonObjectUtil.getAttrValue(json , "meta" , "size");
-        }
-
         if(!(JsonObjectUtil.getAttrValue(json , "meta") != null && JsonObjectUtil.getAttrValue(json , "meta" , "total").equals("0"))){
             Integer sizeI = Integer.valueOf(JsonObjectUtil.getAttrValue(json , "meta" , "size"));
-
             buildLessions(json);
-
-            String [] cat = {"", "资源", "测验", "讨论"};
-
             Lesson[]  lessonArr = new Lesson[this.lessons.size()];
-
             if(this.lessons != null && this.lessons.size()> 0 ){
                 int index = 0 ;
                 for(Lesson lesson : this.lessons){
@@ -398,28 +394,13 @@ public class APIController {
                     index++;
                 }
             }
-
-
-            String res = "";
-
-
-
-
+            boolean testFlag = false;
             for (int i = 0; i < sizeI; i++) {
-                String id = "";
-                String title = "";
-                String cls = "";
-
                 //获取该chapter下面所有的 1，测试 2， 所有资源
                 if (lessonArr[i].getCategory() == 1) {
                         /*资源*/
-                    String viewer = null;
-                    if(lessonArr[i].getResource().getViewer() == null){
-                        viewer = "1";
-                    }
-                    cls = 'v' + lessonArr[i].getResource().getViewer();
                     String resourceId = lessonArr[i].getResource().getId();
-                    title = lessonArr[i].getTitle();
+                    String title = lessonArr[i].getTitle();
                     HashMap<String,String> obj = new HashMapUtil<String,String>()
                             .put("resourceId",resourceId)
                             .put("parentLessonId" , lessonArr[i].getParentId() )
@@ -427,12 +408,13 @@ public class APIController {
                             .put("title" , title)
                             .put("currentLessonId",lessonArr[i].getId())
                             .map();
-                    getResFun(obj);
+                    getResFun(courseId , obj);
                 } else if (lessonArr[i].getCategory() == 2) {
+                    testFlag = true;
                         /*测试*/
                         //TODO
+                    String title = "";
                     String testId = lessonArr[i].getTestId();
-                    String pid = lessonArr[i].getId();
                     HashMap<String,String> obj = new HashMapUtil<String,String>()
                             .put("testId",testId)
                             .put("parentLessonId" , lessonArr[i].getParentId() )
@@ -441,19 +423,28 @@ public class APIController {
                             .put("currentLessonId",lessonArr[i].getId())
                             .map();
                     //测试id 父id
-                    getTestFun(obj);
+                    getTestFun(courseId , obj);
                 } else if (lessonArr[i].getCategory() == 3) {
-                    id = lessonArr[i].getForum().getId();
-                    title = lessonArr[i].getForum().getTitle();
+                    String title = lessonArr[i].getForum().getTitle();
                     HashMap<String,String> obj = new HashMapUtil()
                             .put("forumId",lessonArr[i].getForumId())
                             .put("currentLessonId" , lessonArr[i].getId() )
                             .put("parentLessonId" , lessonArr[i].getParentId())
-                            .put("cat" , cat)
                             .put("title" , title)
                             .map();
-                    getForumFun(obj);
+                    getForumFun(courseId , obj);
                 }
+            }
+            if(testFlag == Boolean.TRUE){
+                String testId = _obj.get("testId");
+                String currentLessionId = _obj.get("currentLessonId");
+                String parentLessionId = _obj.get("parentLessonId");
+                //tid 是 testid structure是学科id sid是lession编号
+                doTest(testId, courseId , currentLessionId ,  parentLessionId , this.moocCid);
+
+                //使学习进度的测试能够完成
+                String url00 = this.baseUrl + "/json/exam/papers?id="+testId+"&ts="+System.currentTimeMillis();
+                String resp = HttpClientUtil.getPageByURLAndCookie(url00 , this.cookieMap , null);
             }
         }
     }
@@ -477,27 +468,23 @@ public class APIController {
                 lessons.add(lesson);
             }
         }
-        return;
     }
 
     /*获取测试*/
-    private void getTestFun(HashMap<String,String> _obj){
+    private void getTestFun(String courseId,  HashMap<String,String> _obj){
+        this._obj = _obj;
         String testId = _obj.get("testId");
         String currentLessionId = _obj.get("currentLessonId");
         String parentLessionId = _obj.get("parentLessonId");
-        String url = this.baseUrl + "/json/exam/papers?id="+testId;
+        String url = this.baseUrl + "/json/exam/papers?id="+testId+"&ts="+System.currentTimeMillis();
         String resp = HttpClientUtil.getPageByURLAndCookie(url , this.cookieMap , null);
         if(!("0").equals(JsonObjectUtil.getAttrValue(resp, "total"))){
-//            String res = "";
-            String title = JsonObjectUtil.getArray(resp , "data" , 0 , "title");
-            //tid 是 testid structure是学科id sid是lession编号
-            doTest(testId, this.courseId , currentLessionId ,  parentLessionId , moocCid , title);
-            getTestPage(testId);
+            this._obj = _obj;
+            getTestPage(courseId , testId);
         }
     }
 
-    public void getTestPage(String testId){
-//        this.cookieMap = new HashMapUtil().put("Cookie",this.xsid).map();
+    public void getTestPage(String courseId , String testId){
         String getPaperUrl = this.baseUrl + "/json/exam/paper?id="+testId;
         String resp = HttpClientUtil.getPageByURLAndCookie(getPaperUrl , this.cookieMap , null);
         //fastjson真好用啊 给个赞!
@@ -510,7 +497,7 @@ public class APIController {
                 "\t\"username\": \""+this.username+"\",\n" +
                 "\t\"name\": \""+realName+"\",\n" +
                 "\t\"paperId\": \""+paper.getId()+"\",\n" +
-                "\t\"courseId\": \""+this.courseId+"\",\n" +
+                "\t\"courseId\": \""+courseId+"\",\n" +
                 "\t\"answers\": {\n");
         //遍历paper
         if(paper != null){
@@ -574,11 +561,9 @@ public class APIController {
                 ;
         String submitTestUrl = this.baseUrl +  "/json/scoring";
         ResultDTO submitResp = HttpClientUtil.postByURLJSON( submitTestUrl , this.cookieMap , postParam.toString());
-//        System.out.println("测试 返回"+submitResp.getResponse());
-        return;
     }
 
-    private void doTest(String itemId ,String xqsId, String sid,String cid ,String mcItemId,String title ){
+    private void doTest(String itemId ,String xqsId, String sid,String cid ,String mcItemId ){
 
         //&id=' + X.qs.id + '&sid=' + sid + '&cid=' + cid + '&mid=' + mcItem.id + '
 
@@ -586,6 +571,7 @@ public class APIController {
 
             String resp = HttpClientUtil.getPageByURLAndCookie(url , this.cookieMap , null);
             return;
+            ///learn/mooc/testing/do?tid=8218&id=334564643&sid=67372&cid=42306&mid=11158259
     }
 
 
@@ -598,7 +584,6 @@ public class APIController {
         pw+=ScriptEngineUtil.encode(password);
         String cn = cnonce();
         pw+= cn ;
-        //4CEE9E58809DF22F6BD7273B5782073582541CE0081C585C06ECC37AFC9DB0F5
         String hash = ScriptEngineUtil.encode(pw);
         String captcha = null;
         try {
@@ -615,7 +600,7 @@ public class APIController {
     private String 获取点击进入课堂页面(){
         return null;
     }
-    private void getResFun(Map<String,String>_obj) {
+    private void getResFun(String courseId , Map<String,String>_obj) {
 //        $("#previewPlayer").html('<p id="playerContent"></p>');
         String url = this.baseUrl + "/json/my/res?id="+ _obj.get("resourceId");
         String res = HttpClientUtil.getPageByURLAndCookie(url , this.cookieMap , null);
@@ -629,7 +614,7 @@ public class APIController {
                 "\t\"ownerId\": "+sessionId+",\n" +
                 "\t\"parentId\": \""+this.moocCid+"\",\n" +
                 "\t\"action\": 0,\n" +
-                "\t\"courseId\": \""+this.courseId+"\",\n" +
+                "\t\"courseId\": \""+courseId+"\",\n" +
                 "\t\"sectionId\": \""+_obj.get("currentLessonId")+"\",\n" +
                 "\t\"chapterId\": \""+ _obj.get("parentLessonId")+"\",\n" +
                 "\t\"category\": 2,\n" +
@@ -638,155 +623,18 @@ public class APIController {
 
         String url0 = this.baseUrl + "/json/learnLogs";
         ResultDTO resultDTO = HttpClientUtil.postByURLJSON(url0 , this.cookieMap , param);
-
-//        System.out.println( "视频 返回" + resultDTO);
-
-//        X.get("/json/my/res?id=" + , function(respText) {
-//            $('.mr_loading').hide();
-//            var item = JSON.parse(respText);
-//            if (item.title) {
-//                var res = '';
-//                $('.file_title').html(_obj.title || item.title);
-//                displayResFile(item.id);
-//            }
-//        });
-
     }
 
-    private void displayResFile(String id) {
-        String url = this.baseUrl + "/json/my/res?id=" + id;
-        String resp = HttpClientUtil.getPageByURLAndCookie( url , this.cookieMap , null);
-        String newSourceDIR = JsonObjectUtil.getAttrValue(resp , "newSourceDIR");
-        String uuid = JsonObjectUtil.getAttrValue(resp , "oid");
-        String viewer = JsonObjectUtil.getAttrValue(resp , "viewer") != null ? JsonObjectUtil.getAttrValue(resp , "viewer") : "2" ;
-//        X.get('/json/my/res?id=' + id, function(resp) {
-//            resp = JSON.parse(resp);
-//            resp.newSourceDIR = resp.newSourceDIR || "";
-//            //预览文件可以在播放器中显示
-//            var width = 725;
-//            var length = 740;
-//            var uuid = resp.oid; //"ff808081-29263667-0129-26367ec3-118f"; //resp.oid;
-//            var viewer = resp.viewer || "2";
-//            var flashvars = {
-//                    'uuid': uuid,
-//                    'oid': uuid + '_pre'
-//            };
-//            var playerSrc = "/files/DocPlayer.swf"; //viewer=0或1时用此播放器
-//            var IService = '/docXML';
-//            if (resp.newSourceDIR.length) {
-//                IService = '/newdocXML';
-//            }
-//            if (viewer === "2") {
-//                length = 409;
-//                IService = '/videoXML';
-//                if (resp.newSourceDIR.length) {
-//                    IService = '/newvideoXML';
-//                    // IService = '/api/resource/play/newvideoXML';
-//                    // IService += encodeURIComponent('?resId=' + uuid + '&host=http://convert-resource.baipeng.org' + '&');
-//                    // flashvars.resId = uuid;
-//                    // flashvars.host = 'http://convert-resource.baipeng.org'; //'http://' + document.location.host;
-//                }
-//                playerSrc = "/files/FlvPlayer.swf"; //音视频播放器，即viewer=2时用此播放器
-//            }
-//            flashvars.IService = IService;
-//            // var flashvars = {
-//            //     'uuid': uuid,
-//            //     'oid': uuid + '_pre',
-//            //     'IService': IService
-//            // };
-//            var params = {
-//                    quality: "high",
-//                    wmode: "opaque",
-//                    allowscriptaccess: "always",
-//                    allowfullscreen: "true",
-//                    bgcolor: "#fff"
-//            };
-//            var attributes = {
-//                    id: "player",
-//                    name: "player"
-//            };
-//            var swf = playerSrc;
-//            swfobject.embedSWF(swf, "playerContent", width, length, "9.0.0", false, flashvars, params, attributes);
-//
-//            setTimeout(function() {
-//                setLog(); //设置资源学习log
-//            }, 30000);
-//        });
-    }
-
-//    private void setLog() {
-//        String logService = "/json/learnLogs";
-//        var item = {};
-//        item.username = user.username;
-//        item.ownerId = user.id || "";
-//        item.parentId = mcItem.id || ""; //选课id
-//        item.action = 0;
-//        item.courseId = X.qs.id;
-//        item.sectionId = sid; //mooc资源id
-//        item.chapterId = cid; //章节id
-//        item.category = 2;
-//        //console.log(item);
-//        if (item.ownerId.length == 0 || item.parentId.length == 0) {
-//            return;
-//        }
-//        X.get(logService + '?category=2&sectionId=' + sid + '&ownerId=' + item.ownerId, function(respText) {
-//            var resp = JSON.parse(respText);
-//            resp.meta = resp.meta || {
-//                    total: "0",
-//                    size: "0"
-//            };
-//            if (resp.meta && resp.meta.total === '0') {
-//                X.get('/time', function(t) {
-//                    t = JSON.parse(t);
-//                    var d = new Date();
-//                    if (t.time) {
-//                        d = new Date(t.time);
-//                    }
-//                    item.time = d.getFullYear() + '' + (d.getMonth() + 1) + '' + d.getDate();
-//                    X.post(logService, item, function(respText) {
-//                        //alert(respText);
-//                    });
-//                });
-//            } else {
-//                return;
-//            }
-//        });
-//    }
-
-//    private void getContFun(Map<String,String> obj){
-//        String sid = obj.get("pid");
-//        String  conCat = obj.get("cat");
-//
-//        String cla = obj.get("cla");
-//
-//        String id = obj.get("tid");
-//
-//        if (conCat.equals("1")) {
-//            /*资源*/
-//            getResFun(obj);
-//        } else if (conCat.equals("2")) {
-//            /*测试*/
-//            String paperId = obj.get("id");
-//            getTestFun(paperId  , sid);
-//        } else if (conCat.equals("3") ) {
-//            /*讨论*/
-//            getForumFun(obj);
-//        }
-//    }
-
-    private void getForumFun(Map<String, String> _obj) {
-
+    private void getForumFun(String courseId , Map<String, String> _obj) {
         //做好所有看视频等等
-
         String url = this.baseUrl + "/json/forum?id="+_obj.get("forumId")+"&ts="+System.currentTimeMillis()+"";
         String resp = HttpClientUtil.getPageByURLAndCookie(url , this.cookieMap , null);
-
         String param = "{\n" +
                 "\t\"username\": \""+this.username+"\",\n" +
                 "\t\"ownerId\": "+sessionId+",\n" +
                 "\t\"parentId\": \""+this.moocCid+"\",\n" +
                 "\t\"action\": 0,\n" +
-                "\t\"courseId\": \""+this.courseId+"\",\n" +
+                "\t\"courseId\": \""+courseId+"\",\n" +
                 "\t\"sectionId\": \""+_obj.get("currentLessonId")+"\",\n" +
                 "\t\"chapterId\": \""+ _obj.get("parentLessonId")+"\",\n" +
                 "\t\"category\": 2,\n" +
@@ -795,17 +643,11 @@ public class APIController {
 
         String url0 = this.baseUrl + "/json/learnLogs";
         ResultDTO resultDTO = HttpClientUtil.postByURLJSON(url0 , this.cookieMap , param);
-
-//        System.out.println( "讨论  返回" + resultDTO);
-
-
-
     }
 
     public String toHEX(long v){
         //4061789743
         String [] INT2HEX = {"0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "A", "B", "C", "D", "E", "F"};
-
         String h = "";
         h += INT2HEX[Math.toIntExact(v >>> 28 & 0xF)];
         h += INT2HEX[Math.toIntExact(v >>> 24 & 0xF)];
@@ -840,16 +682,12 @@ public class APIController {
         String saveFileName = CapchaSaveConfig.SAVE_CONFIG + System.currentTimeMillis()+ ".jpeg";
         ImageUtil.generateImage(removedCompleteImgData , saveFileName);
         String imageXml = RuoKuai.createByPost(saveFileName);
-
         return getVerifyCode(imageXml);
-
-
     }
 
     private String getVerifyCode(String imageXml) {
         SAXReader reader = new SAXReader();
         try {
-
             Document doc = reader.read(new ByteArrayInputStream(imageXml
                     .getBytes("UTF8")));
             Element rootEle =  doc.getRootElement().element("Result");
@@ -870,7 +708,6 @@ public class APIController {
     private String getBase64Pic(String loginPage) {
         try{
             Parser parser = Parser.createParser(loginPage, Charset.defaultCharset().toString());
-
             //缓冲层 parser解析一次之后，再次解析为空
             NodeList cacheNodeList = parser.parse(new NodeFilter() {
                 public boolean accept(Node node) {
@@ -890,12 +727,10 @@ public class APIController {
         }catch (Exception e){
             e.printStackTrace();
         }
-
         return null;
     }
 
     public void doLogin(){
-
         if(username != null && password != null
                 && encodePassword != null
                 && nonce != null
@@ -908,8 +743,6 @@ public class APIController {
         }else{
             throw new IllegalArgumentException("用户名 "+this.username+", 密码  "+this.password+", 加密后的密码 "+this.encodePassword+", nonce "+this.nonce+"， cnonce "+this.cnonce+"参数缺失，无法登陆。");
         }
-
-
     }
     /**
      *
@@ -928,11 +761,5 @@ public class APIController {
         String url = "http://www.cqooc.net/login";
         String page = HttpClientUtil.getPageByURL(url);
         return page;
-    }
-
-    public String getUserId(String xsid) {
-        //http://www.cqooc.net/user/session?xsid=60E448256BC78399&ts=1537523392140
-        String url = "http://www.cqooc.net/user/session?xsid="+xsid+"&ts="+System.currentTimeMillis();
-        return null;
     }
 }

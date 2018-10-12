@@ -13,9 +13,9 @@ public class APIControllerTests {
 //
 //        String password = "123456ABc";
 
-        String username1 = "106372016051413138";
-        String password1 = "Wyl799424342";
-        new APIController(username1 , password1 ,false ,true ,true);
+        String username1 = "137351611150549";
+        String password1 = "Dch1997921";
+        new APIController(username1 , password1 ,false);
 //        new APIController(username , password);
     }
 
