@@ -3,10 +3,12 @@ package net.cqooc.tool;
 import org.junit.Test;
 
 import java.math.BigDecimal;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 
 public class APIControllerTests {
 
-    @Test
+//    @Test
     public void getLoginPageTests(){
 
 //        String username = "106372016051413207";
@@ -37,6 +39,15 @@ public class APIControllerTests {
         new APIController().buildLessions(lessonRes);
         return;
 
+    }
+
+    @Test
+    public void getDate(){
+        Date date = new Date();
+
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMdd");
+        String dateTime = sdf.format(date);
+        return;
     }
 }
 

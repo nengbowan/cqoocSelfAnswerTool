@@ -8,6 +8,7 @@ package net.cqooc.tool.gui;
 
 
 import net.cqooc.tool.APIController;
+import net.cqooc.tool.APIControllerV2;
 import net.cqooc.tool.domain.ImportUser;
 import net.cqooc.tool.util.CSVReader;
 import net.cqooc.tool.util.CapchaSaveConfig;
@@ -166,20 +167,16 @@ public class Main extends javax.swing.JFrame {
             }else{
                 saveButton.setVisible(true);
             }
-
         }else{
             CapchaSaveConfig.SAVE_CONFIG = "";
             startDo();
         }
-
     }
-
-
 
     private void startDo() {
         if(user != null && user.size()>0){
             for(ImportUser user : user){
-                new APIController(  user.getUsername() , user.getPassword() , isAuthRadioButton.isSelected());
+                new APIControllerV2(  user.getUsername() , user.getPassword() ).run();
             }
         }else{
             JOptionPane.showInputDialog("未导入学生账号，请导入后重新操作");

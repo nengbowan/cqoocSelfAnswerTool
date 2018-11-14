@@ -3,12 +3,15 @@ package net.cqooc.tool.util;
 import net.cqooc.tool.dto.ResultDTO;
 import org.apache.http.Header;
 import org.apache.http.HttpEntity;
+import org.apache.http.HttpResponse;
 import org.apache.http.NameValuePair;
 import org.apache.http.client.ClientProtocolException;
+import org.apache.http.client.HttpClient;
 import org.apache.http.client.entity.UrlEncodedFormEntity;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
+import org.apache.http.client.methods.HttpRequestBase;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
@@ -25,13 +28,11 @@ import java.util.Map;
 
 public class HttpClientUtil {
 
-    public static String getPageByURL(String url){
+    public static String getOrPost( HttpRequestBase getOrPost , HttpClient httpClient){
         try{
-            CloseableHttpClient httpclient = HttpClients.createDefault();
-            HttpGet httpGet = new HttpGet(url);
-            CloseableHttpResponse response = httpclient.execute(httpGet);
-            HttpEntity entity2 = response.getEntity();
-            String result = EntityUtils.toString(entity2 , Charset.defaultCharset());
+            HttpResponse response = httpClient.execute(getOrPost);
+            HttpEntity httpEntity = response.getEntity();
+            String result = EntityUtils.toString(httpEntity , Charset.defaultCharset());
             return result;
         }catch (Exception e){
             e.printStackTrace();
@@ -101,59 +102,59 @@ public class HttpClientUtil {
     }
 
 
-    public static ResultDTO postResByUrl(String url , Map<String,String> headerParams , Map<String,String> postParams) {
-        CloseableHttpClient httpclient = HttpClients.createDefault();
-        HttpPost httPost = new HttpPost(url);
-        List<NameValuePair> nvps = new ArrayList<NameValuePair>();
-
-        if(headerParams != null && headerParams.size()>0){
-            for(Map.Entry<String,String> entry : headerParams.entrySet()){
-                httPost.addHeader(new BasicHeader(entry.getKey() , entry.getValue()));
-            }
-        }
-        if(postParams != null && postParams.size() != 0){
-            for(Map.Entry entry : postParams.entrySet()){
-                nvps.add(new BasicNameValuePair(entry.getKey().toString() , entry.getValue().toString()));
-            }
-        }
-//        Header header = new BasicHeader("Content-Type","application/x-www-form-urlencoded;charset=UTF-8");
+//    public static ResultDTO post(String url , HttpRequestBase getOrPost , Map<String,String> postParams) {
+//        CloseableHttpClient httpclient = HttpClients.createDefault();
+//        HttpPost httPost = new HttpPost(url);
+//        List<NameValuePair> nvps = new ArrayList<NameValuePair>();
+//
+//        if(headerParams != null && headerParams.size()>0){
+//            for(Map.Entry<String,String> entry : headerParams.entrySet()){
+//                httPost.addHeader(new BasicHeader(entry.getKey() , entry.getValue()));
+//            }
+//        }
+//        if(postParams != null && postParams.size() != 0){
+//            for(Map.Entry entry : postParams.entrySet()){
+//                nvps.add(new BasicNameValuePair(entry.getKey().toString() , entry.getValue().toString()));
+//            }
+//        }
+////        Header header = new BasicHeader("Content-Type","application/x-www-form-urlencoded;charset=UTF-8");
+////
+////
+////        Header referHeader = new BasicHeader("Referer","http://sso.njcedu.com/login.htm");
+////        httPost.addHeader(header);
+////
+////        httPost.addHeader(referHeader);
+////        httPost.addHeader(header);
+//        try {
+//            httPost.setEntity(new UrlEncodedFormEntity(nvps , Charset.forName("UTF-8")));
+//            CloseableHttpResponse res = httpclient.execute(httPost);
+//            Header[] cookies = res.getHeaders("Set-Cookie");
+//            StringBuffer cookieStr = new StringBuffer();
+//            if(cookies != null && cookies.length != 0){
+//                for(Header cookHeader : cookies){
+//                    cookieStr.append(cookHeader.getValue() + ";");
+//                }
+//            }
+//            HttpEntity entity2 = res.getEntity();
+//            // do something useful with the response body
+//            // and ensure it is fully consumed
+//            String respStr = EntityUtils.toString(entity2 , Charset.defaultCharset());
+//            return ResultDTO.builder()
+//                    .response(respStr)
+//                    .cookie(cookieStr.toString())
+//                    .build();
+//        } catch (UnsupportedEncodingException e) {
+//            e.printStackTrace();
+//        } catch (ClientProtocolException e) {
+//            e.printStackTrace();
+//        } catch (IOException e) {
+//            e.printStackTrace();
+//        }
 //
 //
-//        Header referHeader = new BasicHeader("Referer","http://sso.njcedu.com/login.htm");
-//        httPost.addHeader(header);
+//        return null;
 //
-//        httPost.addHeader(referHeader);
-//        httPost.addHeader(header);
-        try {
-            httPost.setEntity(new UrlEncodedFormEntity(nvps , Charset.forName("UTF-8")));
-            CloseableHttpResponse res = httpclient.execute(httPost);
-            Header[] cookies = res.getHeaders("Set-Cookie");
-            StringBuffer cookieStr = new StringBuffer();
-            if(cookies != null && cookies.length != 0){
-                for(Header cookHeader : cookies){
-                    cookieStr.append(cookHeader.getValue() + ";");
-                }
-            }
-            HttpEntity entity2 = res.getEntity();
-            // do something useful with the response body
-            // and ensure it is fully consumed
-            String respStr = EntityUtils.toString(entity2 , Charset.defaultCharset());
-            return ResultDTO.builder()
-                    .response(respStr)
-                    .cookie(cookieStr.toString())
-                    .build();
-        } catch (UnsupportedEncodingException e) {
-            e.printStackTrace();
-        } catch (ClientProtocolException e) {
-            e.printStackTrace();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-
-
-        return null;
-
-    }
+//    }
 
 
     public static ResultDTO postByURLJSON(String url , Map<String,String> headerParams , String postJson) {
@@ -209,5 +210,13 @@ public class HttpClientUtil {
 
         return null;
 
+    }
+
+    public static String getPageByURL(String url) {
+        return null;
+    }
+
+    public static ResultDTO postResByUrl(String url, Object o, Object o1) {
+        return null;
     }
 }

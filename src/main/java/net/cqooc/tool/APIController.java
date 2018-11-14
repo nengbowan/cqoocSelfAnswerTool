@@ -8,6 +8,7 @@ import net.cqooc.tool.dto.ExamDTO;
 import net.cqooc.tool.dto.ResultDTO;
 import net.cqooc.tool.dto.ResultDTO0;
 import net.cqooc.tool.util.*;
+import org.apache.commons.codec.binary.StringUtils;
 import org.dom4j.Document;
 import org.dom4j.DocumentException;
 import org.dom4j.Element;
@@ -89,12 +90,20 @@ public class APIController {
 
     List<Course0> courseIng; //进行中的课程
 
+    List<Map> waitToRefreshMap = new ArrayList<>();
+
 
     private boolean doExamFlag;
     public APIController(){
 
     }
+    public APIController(String username , String password){
+        this.username = username;
+        this.password = password;
 
+//        loginBefore();
+
+    }
     //默认只刷任务
     public APIController(String username , String password, boolean isAuth ){
         this.username = username;
@@ -121,7 +130,8 @@ public class APIController {
             this.cookieMap = new HashMapUtil().put("Cookie",this.xsid).map();
         }else{
             System.out.println(this.username + " 登录授权未通过...");
-            System.exit(0);
+            return;
+//            System.exit(0);
         }
         //获取提交试卷时候的唯一识别id码
         String sessionIdUrl = "http://www.cqooc.net/user/session?xsid="+this.xsid+"&ts="+System.currentTimeMillis()+"";
@@ -147,36 +157,11 @@ public class APIController {
                 List<Chapter> chapters = getAllChapter(courseId);
                 //做测试
                 if(chapters != null){
-                    int count = 0;
                     for(Chapter c : chapters){
+                        getLessonFun(courseId , c.getId());
                         System.out.println(c.getTitle());
-                        getLessonFun(courseId , c.getId() );
-                        count++;
-                        String testId = _obj.get("testId");
-                        String currentLessionId = _obj.get("currentLessonId");
-                        String parentLessionId = _obj.get("parentLessonId");
-                        //tid 是 testid structure是学科id sid是lession编号
-                        doTest(testId, courseId , currentLessionId ,  parentLessionId , course0.getId());
-                        System.out.println("最后一次点击测试刷新");
-
-//                        new Thread(new Runnable() {
-//                            @Override
-//                            public void run() {
-////                                try {
-////                                    Thread.sleep(30000);
-////                                } catch (InterruptedException e) {
-////                                    e.printStackTrace();
-////                                }
-//                                String testId = _obj.get("testId");
-//                                String currentLessionId = _obj.get("currentLessonId");
-//                                String parentLessionId = _obj.get("parentLessonId");
-//                                //tid 是 testid structure是学科id sid是lession编号
-//                                doTest(testId, courseId , currentLessionId ,  parentLessionId , course0.getId());
-//                                System.out.println("最后一次点击测试刷新");
-//                            }
-//                        }).start();
                     }
-                    System.out.println(realName +course0.getTitle() +"的测试 讨论 视频 资源 共"+count+"个,已看完 。。。" );
+                    System.out.println(realName +course0.getTitle() +"的测试,讨论,视频,资源已看完 。。。" );
                 }
 
                 //做项目作业
@@ -193,12 +178,6 @@ public class APIController {
         new Thread(new Runnable() {
             @Override
             public void run() {
-                System.out.println("等待三分钟 完成试卷 开启多线程");
-                try {
-                    Thread.sleep(3*60*1000);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
                 try {
                     String getPaperUrl = baseUrl + "/json/exams?select=id,title&status=1&courseId=" + courseId + "&limit=99&sortby=id&reverse=true&ts=" + System.currentTimeMillis() + "";
                     String resp = HttpClientUtil.getPageByURLAndCookie(getPaperUrl, cookieMap, null);
@@ -206,6 +185,18 @@ public class APIController {
                         String examId = JsonObjectUtil.getArray(resp, "data", 0, "id");
                         if (examId != null && !examId.equals("")) {
                             System.out.println("正在做大试卷");
+
+                            //申请试卷
+                            //http://www.cqooc.net/exam/api/paper/gen
+                            String generatePaperUrl=  baseUrl + "/exam/api/paper/gen";
+                            String generaetPaperPostData =  new HashMapUtil().put("courseId", courseId)
+                                    .put("examId", examId)
+                                    .put("name", realName)
+                                    .put("ownerId", sessionId)
+                                    .put("username", username.toLowerCase())
+                                    .toJsonStr();
+                            System.out.println("生成试卷"+HttpClientUtil.postByURLJSON(generatePaperUrl , cookieMap ,generaetPaperPostData ));
+
                             //获取大试卷答案
                             String getAnswerUrl = baseUrl + "/json/eps?ownerId=" +sessionId + "&examId=" + examId + "&ts=" + System.currentTimeMillis() + "";
                             String answerResp = HttpClientUtil.getPageByURLAndCookie(getAnswerUrl, cookieMap, null);
@@ -394,12 +385,18 @@ public class APIController {
                     index++;
                 }
             }
-            boolean testFlag = false;
+            Boolean testFlag = false;
             for (int i = 0; i < sizeI; i++) {
                 //获取该chapter下面所有的 1，测试 2， 所有资源
                 if (lessonArr[i].getCategory() == 1) {
                         /*资源*/
-                    String resourceId = lessonArr[i].getResource().getId();
+                    Resource resource = lessonArr[i].getResource();
+                    String resourceId = null;
+                    if(resource == null){
+                        resourceId = lessonArr[i].getResid();
+                    }else{
+                        resourceId = resource.getId();
+                    }
                     String title = lessonArr[i].getTitle();
                     HashMap<String,String> obj = new HashMapUtil<String,String>()
                             .put("resourceId",resourceId)
@@ -409,10 +406,11 @@ public class APIController {
                             .put("currentLessonId",lessonArr[i].getId())
                             .map();
                     getResFun(courseId , obj);
+                    testFlag = false;
+//                    getResFun(courseId , obj);
+                    //learnlogs也能把学习内容进度刷满
                 } else if (lessonArr[i].getCategory() == 2) {
-                    testFlag = true;
                         /*测试*/
-                        //TODO
                     String title = "";
                     String testId = lessonArr[i].getTestId();
                     HashMap<String,String> obj = new HashMapUtil<String,String>()
@@ -424,6 +422,14 @@ public class APIController {
                             .map();
                     //测试id 父id
                     getTestFun(courseId , obj);
+
+                    String statCourseUrl = "http://www.cqooc.com/json/statCourse?id="+courseId+"&ts="+System.currentTimeMillis();
+                    HttpClientUtil.getPageByURLAndCookie(statCourseUrl , this.cookieMap , null);
+
+                    //使学习进度的测试能够完成
+                    String url00 = this.baseUrl + "/json/exam/papers?id="+testId+"&ts="+System.currentTimeMillis();
+                    String resp = HttpClientUtil.getPageByURLAndCookie(url00 , this.cookieMap , null);
+                    testFlag = true;
                 } else if (lessonArr[i].getCategory() == 3) {
                     String title = lessonArr[i].getForum().getTitle();
                     HashMap<String,String> obj = new HashMapUtil()
@@ -432,21 +438,37 @@ public class APIController {
                             .put("parentLessonId" , lessonArr[i].getParentId())
                             .put("title" , title)
                             .map();
+
                     getForumFun(courseId , obj);
+                    testFlag = false;
                 }
             }
-            if(testFlag == Boolean.TRUE){
-                String testId = _obj.get("testId");
-                String currentLessionId = _obj.get("currentLessonId");
-                String parentLessionId = _obj.get("parentLessonId");
-                //tid 是 testid structure是学科id sid是lession编号
-                doTest(testId, courseId , currentLessionId ,  parentLessionId , this.moocCid);
 
-                //使学习进度的测试能够完成
-                String url00 = this.baseUrl + "/json/exam/papers?id="+testId+"&ts="+System.currentTimeMillis();
-                String resp = HttpClientUtil.getPageByURLAndCookie(url00 , this.cookieMap , null);
+
+            cacheBeforeRefreshJinDu(_obj);
+
+            if(testFlag == Boolean.TRUE)
+            try{
+
+                    String testId = _obj.get("testId");
+                    String currentLessionId = _obj.get("currentLessonId");
+                    String parentLessionId = _obj.get("parentLessonId");
+                    //tid 是 testid structure是学科id sid是lession编号
+                    doTest(testId, courseId , currentLessionId ,  parentLessionId , this.moocCid);
+
+                    //使学习进度的测试能够完成
+                    String url00 = this.baseUrl + "/json/exam/papers?id="+testId+"&ts="+System.currentTimeMillis();
+                    String resp = HttpClientUtil.getPageByURLAndCookie(url00 , this.cookieMap , null);
+
+            }catch (Exception e){
+                e.printStackTrace();
             }
+
         }
+    }
+
+    private void cacheBeforeRefreshJinDu(HashMap<String, String> obj) {
+        waitToRefreshMap.add(obj);
     }
 
     /**
@@ -561,15 +583,21 @@ public class APIController {
                 ;
         String submitTestUrl = this.baseUrl +  "/json/scoring";
         ResultDTO submitResp = HttpClientUtil.postByURLJSON( submitTestUrl , this.cookieMap , postParam.toString());
+        //做两次题目
+        ResultDTO submitResp1 = HttpClientUtil.postByURLJSON( submitTestUrl , this.cookieMap , postParam.toString());
     }
+
 
     private void doTest(String itemId ,String xqsId, String sid,String cid ,String mcItemId ){
 
         //&id=' + X.qs.id + '&sid=' + sid + '&cid=' + cid + '&mid=' + mcItem.id + '
 
             String url = this.baseUrl + "/learn/mooc/testing/do?tid=" + itemId + "&id=" +xqsId  + "&sid=" +sid + "&cid="+cid + "&mid=" + mcItemId;
+            System.out.println(url);
 
             String resp = HttpClientUtil.getPageByURLAndCookie(url , this.cookieMap , null);
+
+
             return;
             ///learn/mooc/testing/do?tid=8218&id=334564643&sid=67372&cid=42306&mid=11158259
     }
@@ -600,7 +628,8 @@ public class APIController {
     private String 获取点击进入课堂页面(){
         return null;
     }
-    private void getResFun(String courseId , Map<String,String>_obj) {
+    private void getResFun(String courseId , HashMap<String,String>_obj) {
+        this._obj = _obj;
 //        $("#previewPlayer").html('<p id="playerContent"></p>');
         String url = this.baseUrl + "/json/my/res?id="+ _obj.get("resourceId");
         String res = HttpClientUtil.getPageByURLAndCookie(url , this.cookieMap , null);
@@ -625,7 +654,9 @@ public class APIController {
         ResultDTO resultDTO = HttpClientUtil.postByURLJSON(url0 , this.cookieMap , param);
     }
 
-    private void getForumFun(String courseId , Map<String, String> _obj) {
+
+    private void getForumFun(String courseId , HashMap<String, String> _obj) {
+        this._obj = _obj;
         //做好所有看视频等等
         String url = this.baseUrl + "/json/forum?id="+_obj.get("forumId")+"&ts="+System.currentTimeMillis()+"";
         String resp = HttpClientUtil.getPageByURLAndCookie(url , this.cookieMap , null);
@@ -735,13 +766,13 @@ public class APIController {
                 && encodePassword != null
                 && nonce != null
                 && cnonce != null){
-            String url = this.baseUrl + "/user/login?username="+this.username+"&password="+this.encodePassword+"&nonce="+this.nonce+"&cnonce="+this.cnonce+"";
+            String url = this.baseUrl + "/user/login?username="+this.username.toLowerCase()+"&password="+this.encodePassword+"&nonce="+this.nonce+"&cnonce="+this.cnonce+"";
 
             ResultDTO resultDTO = HttpClientUtil.postResByUrl(url , null , null);
             System.out.println(resultDTO);
             this.xsid = JsonObjectUtil.getAttrValue(resultDTO.getResponse() , "xsid");
         }else{
-            throw new IllegalArgumentException("用户名 "+this.username+", 密码  "+this.password+", 加密后的密码 "+this.encodePassword+", nonce "+this.nonce+"， cnonce "+this.cnonce+"参数缺失，无法登陆。");
+            throw new IllegalArgumentException("用户名 "+this.username.toLowerCase()+", 密码  "+this.password+", 加密后的密码 "+this.encodePassword+", nonce "+this.nonce+"， cnonce "+this.cnonce+"参数缺失，无法登陆。");
         }
     }
     /**
@@ -762,4 +793,6 @@ public class APIController {
         String page = HttpClientUtil.getPageByURL(url);
         return page;
     }
+
+
 }

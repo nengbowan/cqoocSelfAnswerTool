@@ -1,6 +1,7 @@
 package net.cqooc.tool.util;
 
 import net.cqooc.tool.APIController;
+import net.cqooc.tool.APIControllerV2;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
@@ -24,7 +25,7 @@ public class CSVReader {
                     map.put(key, value);
 
             }
-            APIController.answersCache = map;
+            APIControllerV2.answersCache = map;
         } catch (IOException e) {
             e.printStackTrace();
         }
