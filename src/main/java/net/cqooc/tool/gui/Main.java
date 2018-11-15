@@ -176,7 +176,7 @@ public class Main extends javax.swing.JFrame {
     private void startDo() {
         if(user != null && user.size()>0){
             for(ImportUser user : user){
-                new APIControllerV2(  user.getUsername() , user.getPassword() ).run();
+                new APIControllerV2(  user.getUsername() , user.getPassword() ,isAuthRadioButton.isSelected()).run();
             }
         }else{
             JOptionPane.showInputDialog("未导入学生账号，请导入后重新操作");

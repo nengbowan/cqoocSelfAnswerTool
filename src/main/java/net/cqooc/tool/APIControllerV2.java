@@ -5,6 +5,7 @@ import com.alibaba.fastjson.JSONObject;
 import net.cqooc.tool.domain.*;
 import net.cqooc.tool.dto.Chapter1;
 import net.cqooc.tool.dto.ExamDTO;
+import net.cqooc.tool.dto.ResultDTO;
 import net.cqooc.tool.dto.ResultDTO0;
 import net.cqooc.tool.dto.v2.LoginBeforeDto;
 import net.cqooc.tool.dto.v2.LoginDto;
@@ -16,6 +17,13 @@ import org.apache.http.client.methods.HttpPost;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.BasicCookieStore;
 import org.apache.http.impl.client.HttpClients;
+import org.apache.http.message.BasicHeader;
+import org.dom4j.Document;
+import org.dom4j.DocumentException;
+import org.dom4j.Element;
+import org.dom4j.io.SAXReader;
+
+import java.io.ByteArrayInputStream;
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
 import java.nio.charset.Charset;
@@ -41,10 +49,80 @@ public class APIControllerV2 {
     private List<Chapter1> task;
     //key 项目作业所在的标题 value 答案
     public static Map<String, String> answersCache= new HashMap<>();//项目作业 简答题答案
+    private CaptchaInfo captchaInfo;
 
-    public APIControllerV2(String username, String password) {
+    private String parseImg2String() {
+        String splitStr = "data:image/jpeg;base64, ";
+        String removedCompleteImgData = this.captchaInfo.getImg().split(splitStr)[1];
+        String saveFileName = CapchaSaveConfig.SAVE_CONFIG + System.currentTimeMillis()+ ".jpeg";
+        ImageUtil.generateImage(removedCompleteImgData , saveFileName);
+        String imageXml = RuoKuai.createByPost(saveFileName);
+        return getVerifyCode(imageXml);
+    }
+    private String getVerifyCode(String imageXml) {
+        SAXReader reader = new SAXReader();
+        try {
+            Document doc = reader.read(new ByteArrayInputStream(imageXml
+                    .getBytes("UTF8")));
+            Element rootEle =  doc.getRootElement().element("Result");
+
+            if(rootEle != null){
+                return rootEle.getText();
+            }else{
+                return null;
+            }
+        } catch (DocumentException e) {
+            e.printStackTrace();
+        } catch (UnsupportedEncodingException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    /**
+     *
+     * @param
+     * @return
+     */
+    public void setCapchaInfo(){
+        String url = "http://www.cqooc.net/captcha/c?ts="+System.currentTimeMillis();
+        HttpGet get = new HttpGet(url);
+        String mapJson = HttpClientUtil.getOrPost(get , client);
+        JSONObject mapObj = JSONObject.parseObject(mapJson);
+        String key = mapObj.getString("key");
+        String img = mapObj.getString("img");
+        this.captchaInfo = CaptchaInfo.builder().img(img).key(key).build();
+    }
+
+    private ResultDTO captchaC(String verifyCode) {
+        String url = this.baseUrl+"/captcha/c";
+        String postParam = new HashMapUtil()
+                .put("key",this.captchaInfo.getKey())
+                .put("captcha" , verifyCode)
+                .toJsonStr();
+
+        HttpPost post = new HttpPost(url);
+        post.addHeader(new BasicHeader("Content-Type","application/json"));
+        post.setEntity(new StringEntity(postParam , Charset.defaultCharset()));
+        String resp =  HttpClientUtil.getOrPost(post , client);
+        System.out.println(resp);
+        return JSONObject.parseObject(resp , ResultDTO.class);
+    }
+
+    public APIControllerV2(String username, String password , Boolean auth) {
         this.username = username;
         this.password = password;
+
+        if(auth){
+            //读验证码的key 和 验证码的值
+            setCapchaInfo();
+            //解析成真实图片识别 并放入captchainfo
+            String verifyCode = parseImg2String();
+            ResultDTO captchaToken = captchaC(verifyCode);
+            if(captchaToken !=null ){
+                this.captchaToken = captchaToken.getCaptchaToken();
+            }
+        }
     }
 
 

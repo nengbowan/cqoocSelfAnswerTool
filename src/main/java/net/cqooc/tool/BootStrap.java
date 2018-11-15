@@ -5,6 +5,6 @@ public class BootStrap {
         String username = "127581104170240";
         String password = "123456";
 
-        new APIControllerV2(username , password).run();
+        new APIControllerV2(username , password , false ).run();
     }
 }
