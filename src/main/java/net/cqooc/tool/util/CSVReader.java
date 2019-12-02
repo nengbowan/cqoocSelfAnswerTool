@@ -1,12 +1,12 @@
 package net.cqooc.tool.util;
 
-import net.cqooc.tool.APIController;
-import net.cqooc.tool.APIControllerV2;
+import net.cqooc.tool.API;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
 
-import java.io.*;
+import java.io.File;
+import java.io.IOException;
 import java.nio.charset.Charset;
 import java.util.HashMap;
 
@@ -25,7 +25,7 @@ public class CSVReader {
                     map.put(key, value);
 
             }
-            APIControllerV2.answersCache = map;
+            API.answersCache = map;
         } catch (IOException e) {
             e.printStackTrace();
         }

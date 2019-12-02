@@ -32,4 +32,7 @@ public class ArrayUtil {
         }
         return null;
     }
+    public static boolean isNotEmpty(String[] arr){
+        return arr != null && arr.length > 0 ;
+    }
 }
