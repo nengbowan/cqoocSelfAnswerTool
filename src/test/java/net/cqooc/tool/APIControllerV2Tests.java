@@ -17,9 +17,15 @@ public class APIControllerV2Tests {
     }
     @Test
     public void getNonceTest() throws IOException {
-        String username = "127580107190311";
-        String passwd = "xfxb521.";
-        new API(username , passwd).run("334566120");
+//        String username = "127581104190128";
+//        String passwd = "20010824cj.";
+//        new API(username , passwd).run("334566875");
+
+        String username = "127580517190102";
+        String passwd = "zyy.0526";
+        new API(username , passwd).run("334566955");
+//        new String(username.getBytes("utf8"), Charset.forName("GBK"));
+
 
 //
 //        HttpGet get = new HttpGet("http://www.cqooc.net/user/login?ts="+System.currentTimeMillis());

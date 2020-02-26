@@ -18,8 +18,10 @@ public class HttpUrlConnectionUtil {
             }else{
                 conn.setRequestProperty("Referer",refererValue);
             }
+            conn.setRequestProperty("User-Agent","Mozilla/5.0 (Macintosh; Intel Mac OS X 10.13; rv:73.0) Gecko/20100101 Firefox/73.0");
 
-            BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+            //指定页面编码读取　否则乱码
+            BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(),"UTF8"));
             String cache = "";
 
             while((cache = br.readLine()) != null){
@@ -36,6 +38,7 @@ public class HttpUrlConnectionUtil {
         }
         return resp;
     }
+
 
     public static String post(String requestUrl,String body,String referer , String userAgent){
         String resp = "";
@@ -58,11 +61,13 @@ public class HttpUrlConnectionUtil {
             }else{
                 conn.setRequestProperty("User-Agent",userAgent);
             }
+            conn.setRequestProperty("Content-Type","application/json");
 
             PrintWriter pw = new PrintWriter(new OutputStreamWriter(conn.getOutputStream()));
             pw.println(body);
             pw.flush();
-            BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+            //指定页面编码读取　否则乱码
+            BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(),"UTF8"));
             String cache = "";
 
             while((cache = br.readLine()) != null){

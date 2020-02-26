@@ -1,16 +1,13 @@
 package net.cqooc.tool;
 
-import net.cqooc.tool.util.CSVReader;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
 import org.junit.Test;
 
 import java.io.File;
-import java.io.FileReader;
 import java.io.IOException;
 import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 
 public class CSVTests {
@@ -19,7 +16,7 @@ public class CSVTests {
     public void test(){
 
 
-        String filepath = "/Users/vincent/Desktop/t_cms_article.csv";
+        String filepath = "/Users/fushiyong/gitRepos/cqoocSelfAnswerTool/test/简答题.csv";
 //
 //        String in = CSVReader.read(filepath);
 

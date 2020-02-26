@@ -3,23 +3,28 @@ package net.cqooc.tool;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.google.common.io.PatternFilenameFilter;
 import net.cqooc.tool.domain.*;
 import net.cqooc.tool.dto.Chapter1;
 import net.cqooc.tool.dto.ExamDTO;
 import net.cqooc.tool.dto.ResultDTO0;
 import net.cqooc.tool.dto.v2.LoginBeforeDto;
 import net.cqooc.tool.dto.v2.LoginDto;
+import net.cqooc.tool.exception.RetriveExamException;
+import net.cqooc.tool.exception.RetriveTaskException;
 import net.cqooc.tool.util.*;
+import org.apache.commons.csv.CSVFormat;
+import org.apache.commons.csv.CSVParser;
+import org.apache.commons.csv.CSVRecord;
 import org.apache.http.client.CookieStore;
 import org.apache.http.client.HttpClient;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.BasicCookieStore;
 import org.apache.http.impl.client.HttpClients;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 import java.io.File;
+import java.io.FilenameFilter;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
@@ -56,7 +61,8 @@ public class API {
 
     /*是否开启载入测试答案*/
     private static boolean loadTestAnswerTrue = true;
-
+    /*是否开启载入单元作业答案*/
+    private static boolean loadTaskAnswerTrue = true;
 
     private boolean loginTrue = false;
 
@@ -73,6 +79,65 @@ public class API {
                 System.exit(0);
             }
         }
+
+        if (loadTaskAnswerTrue) {
+            logger.info("准备载入单元作业答案...");
+            try {
+                loadTaskAnswer();
+            } catch (IOException e) {
+                logger.error("测试答案载入失败,系统退出");
+                logger.error(e.getMessage());
+                e.printStackTrace();
+                System.exit(0);
+            }
+            logger.info("载入单元作业答案完成...");
+        }
+    }
+
+    /**
+     * 载入测试题答案
+     */
+    private static void loadTaskAnswer() throws IOException {
+        File[] files = new File("test").listFiles(new FilenameFilter() {
+            @Override
+            public boolean accept(File dir, String name) {
+                return name.contains("简答题-");
+            }
+        });
+        for (File f : files) {
+            logger.info("载入单元作业答案...:" + f.getName());
+            HashMap<String,String> csvMap = loadCsvAsMap(f.getAbsolutePath());
+
+            for(String key : csvMap.keySet()){
+                answersCache.put(key , csvMap.get(key));
+            }
+
+        }
+    }
+
+    /**
+     * 载入csv为map
+     * @param filepath
+     * @return
+     */
+    private static HashMap<String,String> loadCsvAsMap(String filepath) {
+        try {
+
+            CSVParser parser = CSVParser.parse(new File(filepath), Charset.forName("utf8"), CSVFormat.DEFAULT);
+
+            HashMap map = new HashMap();
+            for (CSVRecord record : parser.getRecords()) {
+                String key = record.get(0);
+                String value = record.get(1);
+                if(key != null && value != null && !key.equals("") && !value.equals("")){
+                    map.put(key, value);
+                }
+            }
+            return map;
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return new HashMap<>();
     }
 
     public API(String username, String password) {
@@ -116,19 +181,18 @@ public class API {
      */
     private static void loadTestAnswer() throws IOException {
 
-        File[] files = new File("test").listFiles();
+        File[] files = new File("test").listFiles(new PatternFilenameFilter("\\d{9}\\.txt"));
         for (File f : files) {
             if (f.getName().contains("指定")) {
                 continue;
             }
-            logger.info("载入测试答案...:" + f.getAbsolutePath());
+            logger.info("载入测试答案...:" + f.getName());
             if (answerMap == null) {
                 answerMap = (ObjectNode) JacksonUtil.objectMapper.readTree(f);
             } else {
                 ObjectNode objectToPut = (ObjectNode) JacksonUtil.objectMapper.readTree(f);
                 answerMap.putAll(objectToPut);
             }
-
         }
     }
 
@@ -212,7 +276,7 @@ public class API {
      */
     public LoginBeforeDto getNonce() {
         String requestUrl = "http://www.cqooc.net/user/login?ts=" + System.currentTimeMillis();
-        String resp = HttpUrlConnectionUtil.get(requestUrl, null);
+        String resp = HttpUrlConnectionUtil.get(requestUrl, "http://www.cqooc.net/login");
         if (!resp.contains("nonce")) {
             requestLogger("获取nonce失败", requestUrl, "", resp);
             return null;
@@ -621,15 +685,22 @@ public class API {
         }
     }
 
-    private void getAllTask(String courseId) {
+    /**
+     * 获取单元作业
+     * @param courseId
+     */
+    private List<Chapter1> getAllTask(String courseId) throws RetriveTaskException {
         String url = "http://www.cqooc.net/json/tasks?limit=100&start=1&status=1&courseId=" + courseId + "&sortby=id&reverse=false&select=id,title,unitId,submitEnd&ts=" + System.currentTimeMillis() + "";
-        HttpGet get = new HttpGet(url);
-        String resp = HttpClientUtil.getOrPost(get, client);
+        String resp = HttpUrlConnectionUtil.get(url, "http://www.cqooc.net/learn/mooc/structure?id="+courseId);
+        if(!resp.contains("\"meta\":{\"total\":")){
+            throw new RetriveTaskException();
+        }
         ResultDTO0 result = JSONObject.parseObject(resp, ResultDTO0.class);
-        this.task = result.getData();
+        return result.getData();
     }
 
     private void doTask(String courseId) {
+        int successCount = 0;
         try {
             if (this.task != null && this.task.size() > 0) {
                 for (Chapter1 chapter1 : this.task) {
@@ -638,8 +709,7 @@ public class API {
                     String answer = answersCache.get(title);
 //                String answer = "调酒工具、计量与方法";
                     if (answer != null && !answer.equals("")) {
-                        String doTaskUrl = "http://www.cqooc.net/json/task/results";
-
+                        String doTaskUrl = "http://www.cqooc.net/task/api/result/add";
                         String postParam = new HashMapUtil().put("attachment", "")
                                 .put("content", "<p>" + answer + "</p>")
                                 .put("courseId", courseId)
@@ -649,10 +719,11 @@ public class API {
                                 .put("taskId", taskId)
                                 .put("username", this.username)
                                 .toJsonStr();
-
-                        HttpPost post = new HttpPost(doTaskUrl);
-                        post.setEntity(new StringEntity(postParam, Charset.defaultCharset()));
-                        HttpClientUtil.getOrPost(post, client);
+                        String resp = HttpUrlConnectionUtil.post(doTaskUrl, postParam , "http://www.cqooc.net/learn/mooc/task/do?tid="+taskId+"&id="+courseId , "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.13; rv:73.0) Gecko/20100101 Firefox/73.0" );
+                        if(!resp.contains("{\"code\":0,")){
+                            requestLogger( "做单元作业" , doTaskUrl , postParam , resp);
+                        }
+                        successCount++;
                     } else {
                         System.out.println("题库不包含这种简答题,所以跳过..." + title);
                         continue;
@@ -662,12 +733,22 @@ public class API {
         } catch (Exception e) {
             e.printStackTrace();
         }
+        logger.info("共完成"+successCount+"个单元作业,,,");
     }
 
-    private void doExam(String courseId) {
+    /**
+     * 每个课程只有一张大试卷
+     * @param courseId
+     */
+    private void doExam(String courseId) throws RetriveExamException {
         String getPaperUrl = baseUrl + "/json/exams?select=id,title&status=1&courseId=" + courseId + "&limit=99&sortby=id&reverse=true&ts=" + System.currentTimeMillis() + "";
         String resp = HttpUrlConnectionUtil.get(getPaperUrl, null);
-        if (!resp.equals("{\"meta\":{\"total\":\"0\",\"start\":\"1\",\"size\":\"0\"},\"data\":[]}")) {
+        if(!resp.contains("meta")){
+            throw new RetriveExamException();
+        }
+        if(resp.equals("{\"meta\":{\"total\":\"0\",\"start\":\"1\",\"size\":\"0\"},\"data\":[]}")){
+            logger.info("没有大试卷,,跳过...");
+        } else{
             String examId = JsonObjectUtil.getArray(resp, "data", 0, "id");
             System.out.println(("获取到期末考试ID:" + examId));
             if (examId != null && !examId.equals("")) {
@@ -678,13 +759,13 @@ public class API {
                 String generatePaperUrl = baseUrl + "/exam/api/paper/gen";
                 String generaetPaperPostData = new HashMapUtil().put("courseId", courseId)
                         .put("examId", examId)
-                        .put("name", realName)
+                        .put("name", "庄研怡")
                         .put("ownerId", sessionId)
                         .put("username", username.toLowerCase())
                         .put("courseId", courseId)
                         .toJsonStr();
                 //{"code":0,"id":537412,"msg":"No error"}
-                String generatePaperResp = HttpUrlConnectionUtil.post(generatePaperUrl, generaetPaperPostData, null, null);
+                String generatePaperResp = HttpUrlConnectionUtil.post(generatePaperUrl, generaetPaperPostData, "http://www.cqooc.net/learn/mooc/exam/do?pid="+examId+"&id="+courseId+"", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.13; rv:73.0) Gecko/20100101 Firefox/73.0");
                 if (!generatePaperResp.contains("No error") && !generatePaperResp.contains("已经生成过试卷，请联系授课教师")) {
                     System.out.println("生成试卷失败:" + generatePaperResp);
                     return;
@@ -692,9 +773,13 @@ public class API {
 
                 //exam/api/paper/get?examId=2559&ts=1575085453963
                 //获取大试卷答案
-                String getAnswerUrl = baseUrl + "exam/api/paper/get?examId=" + examId + "&ts=" + System.currentTimeMillis() + "";
+                String getAnswerUrl = baseUrl + "/exam/api/paper/get?examId=" + examId + "&ts=" + System.currentTimeMillis() + "";
 
                 String answerResp = HttpUrlConnectionUtil.get(getAnswerUrl, null);
+
+                if(!answerResp.startsWith("{\"meta\":{\"total\":")){
+                  return;
+                }
                 ExamDTO examDTO = JSONObject.parseObject(answerResp, ExamDTO.class);
 
 
@@ -755,8 +840,9 @@ public class API {
                                         if (question.getBody().getAnswer() == null || question.getBody().getAnswer().equals("")) {
                                             //没有答案 采用默认的答案
                                             postParam.append("\"q" + question.getId() + "\":\"" + "1" + "\",");
-                                        } else
+                                        } else{
                                             postParam.append("\"q" + question.getId() + "\":\"" + question.getBody().getAnswer().replaceAll("\\[\"", "").replaceAll("\"]", "") + "\",");
+                                        }
                                     }
                                 }
                                 if (index == paperQuestions.size() - 1) {
@@ -781,10 +867,7 @@ public class API {
                 System.out.println("大试卷不存在，不做了");
                 return;
             }
-        } else {
-            System.out.println("大试卷不存在，不做了");
         }
-
 
     }
 
@@ -801,23 +884,18 @@ public class API {
                 logger.info("欢迎您," + realName);
             }
             String courseId = course0.getCourseId();
-            //获取课程下的所有章节
+//            获取课程下的所有章节
             List<Chapter> chapters = getAllChapter(courseId);
             if (CollectionUtils.isEmpty(chapters)) {
                 logger.error("获取课程章节失败,跳过此课程" + course0.getTitle());
                 continue;
             }
-            //排序
+//            排序
             sortChapterById(chapters);
             doChapters(course0, chapters);
             System.out.println(realName + course0.getTitle() + "的测试,讨论,视频,资源已看完 。。。");
-            System.out.println(course0.getTitle() + "已完成");
 
-            //做项目作业　简单题
-//                getAllTask(courseId);
-//                doTask(courseId);
-            //做大试卷
-//                doExam(courseId);
+
         }
     }
 
@@ -888,8 +966,43 @@ public class API {
                     }).collect(Collectors.joining(",")));
         }
         logger.info("准备做课程...");
+        logger.info("准备做视频,讨论,测试...");
         doCourse();
+        logger.info("准备做单元作业...");
+        doTask();
+        logger.info("准备做大试卷...");
+        doExam();
         logger.info(realName + "的课程已全部完成...");
+    }
+
+    private void doExam() {
+        for (Course0 course0 : this.courseIng) {
+            String courseId = course0.getCourseId();
+            //做大试卷
+            try {
+                doExam(courseId);
+            } catch (RetriveExamException e) {
+                logger.error(e.getMessage()  + " ,,跳过大试卷...");
+            }
+        }
+    }
+
+    private void doTask() {
+        for (Course0 course0 : this.courseIng) {
+            String courseId = course0.getCourseId();
+            //做单元作业　类似于简答题
+            try {
+                this.task = getAllTask(courseId);
+                if(CollectionUtils.isEmpty(this.task)){
+                    logger.info("未发现单元作业,跳过,,,");
+                }else{
+                    logger.info("共发现" + task.size() + "个单元作业,,,");
+                    doTask(courseId);
+                }
+            } catch (RetriveTaskException e) {
+                logger.error(e.getMessage()  + " ,,跳过全部单元作业...");
+            }
+        }
     }
 
 
@@ -901,7 +1014,6 @@ public class API {
      * @param resp
      */
     private void requestLogger(String title, String requestUrl, String requestBody, String resp) {
-        int length = "--------------------------------------------------------------".length();
         logger.info("--------------------------------------------------------------");
         logger.info("----------------------" + title + "------------------------------");
         logger.info(String.format("------------------URL:-----------%s------------------------------", requestUrl));
