@@ -17,13 +17,21 @@ public class APIControllerV2Tests {
     }
     @Test
     public void getNonceTest() throws IOException {
+
+        String username = "127581201190414";
+        String passwd = "Xmer0320";
+        new API(username , passwd).run("334566550");
+//        String username = "127580314180220";
+//        String passwd = "ylx959...";
+//        new API(username , passwd).run("334566955");
+
 //        String username = "127581104190128";
 //        String passwd = "20010824cj.";
 //        new API(username , passwd).run("334566875");
 
-        String username = "127580517190102";
-        String passwd = "zyy.0526";
-        new API(username , passwd).run("334566955");
+//        String username = "127580517190102";
+//        String passwd = "zyy.0526";
+//        new API(username , passwd).run("334566955");
 //        new String(username.getBytes("utf8"), Charset.forName("GBK"));
 
 

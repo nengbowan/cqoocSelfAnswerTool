@@ -1,18 +1,32 @@
 package net.cqooc.tool.util;
 
+import net.cqooc.tool.API;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.HashMap;
+import java.util.concurrent.locks.ReentrantLock;
 
 public class HttpUrlConnectionUtil {
-    public static String cookies = "";
+
+    private static Logger logger = LoggerFactory.getLogger(HttpUrlConnectionUtil.class);
+    //threadlocal 多线程
+//    public static String cookies = "";
+    public static ThreadLocal<String> threadLocal = new ThreadLocal<String>(
+
+    ).withInitial(
+            ()-> ""
+    );
     public static String get(String requestUrl,String refererValue){
         String resp = "";
         try {
             URL url = new URL(requestUrl);
             HttpURLConnection conn = null;
             conn = (HttpURLConnection)url.openConnection();
-            conn.setRequestProperty("Cookie",cookies);
+            conn.setRequestProperty("Cookie",threadLocal.get());
             if(StringUtils.isEmpty(refererValue)){
                 conn.setRequestProperty("Referer","http://www.cqooc.net/my/learn");
             }else{
@@ -29,9 +43,9 @@ public class HttpUrlConnectionUtil {
             }
             //处理cookie 头
             String cookie = conn.getHeaderField("Set-Cookie");
-            if(cookie!=null && !cookie.equals("") && !cookies.contains(cookie)){
-                System.out.println("增加cookie:"+cookie+",requestUrl:"+requestUrl);
-                cookies+=cookie;
+            if(cookie!=null && !cookie.equals("") && !threadLocal.get().contains(cookie)){
+                logger.info("增加cookie:"+cookie+",requestUrl:"+requestUrl);
+                threadLocal.set(threadLocal.get() + cookie);
             }
         } catch (IOException e) {
             e.printStackTrace();
@@ -48,7 +62,7 @@ public class HttpUrlConnectionUtil {
             conn = (HttpURLConnection)url.openConnection();
             conn.setDoInput(true);
             conn.setDoOutput(true);
-            conn.setRequestProperty("Cookie",cookies);
+            conn.setRequestProperty("Cookie",threadLocal.get());
             if(StringUtils.isEmpty(referer) ){
                 String defaultReferer = "http://www.cqooc.net/learn/mooc/structure?id=334566120";
                 conn.setRequestProperty("Referer",defaultReferer);
@@ -75,12 +89,22 @@ public class HttpUrlConnectionUtil {
             }
             //处理cookie 头
             String cookie = conn.getHeaderField("Set-Cookie");
-            if(cookie!=null && !cookie.equals("") && !cookies.contains(cookie)){
+            if(cookie!=null && !cookie.equals("") && !threadLocal.get().contains(cookie)){
+
                 System.out.println("增加cookie:"+cookie+",requestUrl:"+requestUrl);
-                cookies+=cookie;
+               threadLocal.set(threadLocal.get() + cookie);
             }
         } catch (IOException e) {
+            //服务器异常
+
+            if(e.getMessage().contains("503")){
+//                logger.error("服务器异常, 触发重试机制 ,,,");
+
+                return post(requestUrl , body , referer , userAgent);
+            }
+            //不建议在异常里面做逻辑业务 小型系统可以
             e.printStackTrace();
+
         }
         return resp;
     }

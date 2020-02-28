@@ -23,10 +23,7 @@ import org.apache.http.impl.client.HttpClients;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.File;
-import java.io.FilenameFilter;
-import java.io.IOException;
-import java.io.UnsupportedEncodingException;
+import java.io.*;
 import java.net.URLEncoder;
 import java.nio.charset.Charset;
 import java.text.SimpleDateFormat;
@@ -38,7 +35,7 @@ import java.util.stream.Collectors;
  * 2019.11.27　更换HttpClient为原生java自带库 HttpURLConnection ,否则HttpClient报nginx 403 ,官方做了大量检测
  */
 @SuppressWarnings(value = "unchecked")
-public class API {
+public class API{
     private static Logger logger = LoggerFactory.getLogger(API.class);
     private String username;
     private String password;
@@ -53,6 +50,8 @@ public class API {
     private List<Chapter1> task;
     //key 项目作业所在的标题 value 答案
     public static Map<String, String> answersCache = new HashMap<>();//项目作业 简答题答案
+    // key 大试卷题目标题 value 答案
+    public static Map<String,String> examAnswer = new HashMap<>();
     private CaptchaInfo captchaInfo;
 
     private CookieStore cookieStore = new BasicCookieStore();
@@ -63,10 +62,18 @@ public class API {
     private static boolean loadTestAnswerTrue = true;
     /*是否开启载入单元作业答案*/
     private static boolean loadTaskAnswerTrue = true;
+    /*是否开启载入大试卷答案*/
+    private static boolean loadExamAnswerTrue = true;
 
     private boolean loginTrue = false;
 
+    /*仅仅做测试*/
+    private boolean doTestOnly = false;
+
+    /*仅仅看视频*/
+    private boolean doTestWatchVideoOnly = false;
     static {
+
         if (loadTestAnswerTrue) {
             try {
                 logger.info("准备载入测试答案...");
@@ -82,22 +89,61 @@ public class API {
 
         if (loadTaskAnswerTrue) {
             logger.info("准备载入单元作业答案...");
-            try {
-                loadTaskAnswer();
-            } catch (IOException e) {
-                logger.error("测试答案载入失败,系统退出");
-                logger.error(e.getMessage());
-                e.printStackTrace();
-                System.exit(0);
-            }
+            loadTaskAnswer();
             logger.info("载入单元作业答案完成...");
+        }
+
+        //载入大试卷答案
+        if (loadExamAnswerTrue) {
+            logger.info("准备载入大试卷答案...");
+            loadExamAnswer();
+            logger.info("载入大试卷答案完成...");
+        }
+
+    }
+
+
+    private static  String[] loadCourseIds() throws IOException {
+
+        BufferedReader bufferedReader = new BufferedReader(new FileReader(new File("test").getAbsolutePath() + File.separator + "指定课程名.txt"));
+        String lines = "";
+        String lineCache = null;
+        while ((lineCache = bufferedReader.readLine()) != null) {
+            lines += lineCache;
+        }
+
+        if (lines.equals("")) {
+            return new String[]{};
+        }
+        String[] courses = lines.split(",");
+
+
+        return courses;
+    }
+    private static void loadExamAnswer() {
+        File[] files = new File("test").listFiles(new FilenameFilter() {
+            @Override
+            public boolean accept(File dir, String name) {
+                return name.contains("大试卷-");
+            }
+        });
+        for (File f : files) {
+            logger.info("载入大试卷答案...:" + f.getName());
+            HashMap<String,String> csvMap = loadCsvAsMap(f.getAbsolutePath() , "gbk");
+            for(String key : csvMap.keySet()){
+                String value = csvMap.get(key);
+                key = key.trim();
+                value = value.trim();
+                examAnswer.put(key , value);
+            }
+
         }
     }
 
     /**
      * 载入测试题答案
      */
-    private static void loadTaskAnswer() throws IOException {
+    private static void loadTaskAnswer() {
         File[] files = new File("test").listFiles(new FilenameFilter() {
             @Override
             public boolean accept(File dir, String name) {
@@ -106,7 +152,7 @@ public class API {
         });
         for (File f : files) {
             logger.info("载入单元作业答案...:" + f.getName());
-            HashMap<String,String> csvMap = loadCsvAsMap(f.getAbsolutePath());
+            HashMap<String,String> csvMap = loadCsvAsMap(f.getAbsolutePath() , "utf8");
 
             for(String key : csvMap.keySet()){
                 answersCache.put(key , csvMap.get(key));
@@ -120,10 +166,10 @@ public class API {
      * @param filepath
      * @return
      */
-    private static HashMap<String,String> loadCsvAsMap(String filepath) {
+    private static HashMap<String,String> loadCsvAsMap(String filepath , String encode) {
         try {
 
-            CSVParser parser = CSVParser.parse(new File(filepath), Charset.forName("utf8"), CSVFormat.DEFAULT);
+            CSVParser parser = CSVParser.parse(new File(filepath), Charset.forName(encode), CSVFormat.DEFAULT);
 
             HashMap map = new HashMap();
             for (CSVRecord record : parser.getRecords()) {
@@ -169,7 +215,7 @@ public class API {
         String resp = HttpUrlConnectionUtil.get(requestUrl, null);
         if (!resp.contains("id")) {
             requestLogger("登录发生错误", requestUrl, "", resp);
-            return;
+            System.exit(0);
         }
         this.sessionId = JSONObject.parseObject(resp).getString("id");
     }
@@ -258,9 +304,16 @@ public class API {
     private void login2(String encodePassword, String nonce, String cnonce) {
         String requestUrl = this.baseUrl + "/user/login?username=" + this.username.toLowerCase() + "&password=" + encodePassword + "&nonce=" + nonce + "&cnonce=" + cnonce + "";
         String loginStr = HttpUrlConnectionUtil.post(requestUrl, "{}", null, null);
+        //{"code":31,"msg":"InvalidCaptchaToken or missing captcha token"}
+        if(loginStr.contains("{\"code\":31")){
+            requestLogger("无效验证码..", requestUrl, "", loginStr);
+            loginTrue = false;
+            return ;
+        }
         if (!loginStr.contains("ok")) {
             requestLogger("登录发生错误", requestUrl, "", loginStr);
             loginTrue = false;
+            return;
         }
         LoginDto loginDto = parseLoginStr(loginStr);
         this.xsid = loginDto.getXsid();
@@ -339,7 +392,7 @@ public class API {
 
     public void getTestPage(String courseName, String courseId, String testId, String title, boolean firstFlag) {
         if (answerMap.get(courseId) == null) {
-            logger.error(courseName + "未配置答案,程序退出,请配置答案,在运行.");
+            logger.error(courseName + "未配置测试答案,跳过,请添加答案,在运行.");
             return;
         }
         String getPaperUrl = this.baseUrl + "/test/api/paper/get?id=" + testId;
@@ -442,7 +495,7 @@ public class API {
             if (1 == jsonObject.getInteger("code")) {
                 logger.error("提交测试题" + title + "出错", submitTestUrl, "", testResp);
 
-                sleep30s();
+                ThreadUtil.sleep30s();
                 getTestPage(courseName, courseId, testId, title, true);
 
             }
@@ -493,6 +546,7 @@ public class API {
             for (int i = 0; i < sizeI; i++) {
                 //获取该chapter下面所有的 1，测试 2， 所有资源
                 if (lessonArr[i].getCategory() == 1) {
+
                     /*资源*/
                     Resource resource = lessonArr[i].getResource();
                     String resourceId = null;
@@ -512,6 +566,9 @@ public class API {
                     //看视频
                     doWatchVideo(moocCid, courseId, currentLessonId, parentLessionId, lessonArr[i].getTitle(), false);
                 } else if (lessonArr[i].getCategory() == 2) {
+                    if(doTestWatchVideoOnly){
+                        continue;
+                    }
                     /*测试*/
                     String testId = lessonArr[i].getTestId();
                     String currentLessionId = lessonArr[i].getId();
@@ -524,6 +581,9 @@ public class API {
                     //做测试
                     doTest(moocCid, courseId, currentLessionId, parentLessionId, lessonArr[i].getChapter().getTitle(), false);
                 } else if (lessonArr[i].getCategory() == 3) {
+                    if(doTestWatchVideoOnly){
+                        continue;
+                    }
                     String forumId = lessonArr[i].getForumId();
                     String currentLessonId = lessonArr[i].getId();
                     String parentLessonId = lessonArr[i].getParentId();
@@ -575,7 +635,7 @@ public class API {
                     && jsonObject.getInteger("code") != 0) {
                 requestLogger("论坛提交失败", url0, param, resp);
 
-                sleep30s();
+                ThreadUtil.sleep30s();
                 doForum(moocCid, courseId, currentLessonId, parentLessonId, true);
             }
             if (firstLoop == true) {
@@ -584,18 +644,7 @@ public class API {
         }
     }
 
-    /**
-     * 休眠三十秒
-     */
-    public void sleep30s() {
-        logger.info("准备重试...等候三十秒..");
-        try {
-            Thread.sleep(30 * 1000);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
 
-    }
 
     /**
      * 测试题目时间打卡
@@ -631,7 +680,7 @@ public class API {
             if (jsonObject.getInteger("code") != 2
                     && jsonObject.getInteger("code") != 0) {
                 System.out.println("测试提交时间打卡失败," + title + "返回:" + resp);
-                sleep30s();
+                ThreadUtil.sleep30s();
                 doTest(moocCid, courseId, currentLessionId, parentLessionId, title, true);
             }
             if (firstLoop == true) {
@@ -669,16 +718,19 @@ public class API {
         String userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.13; rv:70.0) Gecko/20100101 Firefox/70.0";
         String lookResp = HttpUrlConnectionUtil.post(url0, param, referer, userAgent);
         JSONObject jsonObject = JSONObject.parseObject(lookResp);
-        if (
-                jsonObject.getInteger("code") != 2  //已经添加记录
-                        && jsonObject.getInteger("code") != 0) //成功
-        {
-            requestLogger("看视频错误:" + title, url0, param, lookResp);
-            //尝试等10秒再请求　看看　是否非法操作
-            if (jsonObject.getInteger("code") == 3) {
-                sleep30s();
-                doWatchVideo(moocCid, courseId, currentLessonId, parentLessionId, title, true);
-            }
+        if( jsonObject.getInteger("code") == 2 ){
+            logger.info("已经添加记录..."+title);
+            return;
+        }
+        if( jsonObject.getInteger("code") == 0 ){
+            logger.info("看视频成功..."+title);
+            return;
+        }
+        requestLogger("看视频错误:" + title, url0, param, lookResp);
+        //尝试等10秒再请求　看看　是否非法操作
+        if (jsonObject.getInteger("code") == 3) {
+            ThreadUtil.sleep30s();
+            doWatchVideo(moocCid, courseId, currentLessonId, parentLessionId, title, true);
         }
         if (firstLoop == true) {
             System.out.println("看视频错误," + title + "重试成功:");
@@ -740,7 +792,193 @@ public class API {
      * 每个课程只有一张大试卷
      * @param courseId
      */
-    private void doExam(String courseId) throws RetriveExamException {
+    private void doExam(String courseId , String realName ,  Map<String,String> answer ) throws RetriveExamException {
+        //获取课程试卷
+        String examId = getPaper(courseId);
+        //试卷生成 模拟点击
+        boolean generated = generatePaper( courseId , examId , realName);
+        //做试卷
+        doExamImediately(generated , courseId , examId , answer );
+
+}
+
+    /**
+     *
+     * @param generated
+     * @param courseId
+     * @param examId
+     * @param examAnswer 大试卷答案
+     */
+    private void doExamImediately(boolean generated , String courseId , String examId , Map<String,String> examAnswer ) {
+        if (generated) {
+            logger.info("正在做大试卷");
+            //exam/api/paper/get?examId=2559&ts=1575085453963
+            //获取大试卷答案 答案接口已取消 官方升级
+            String getAnswerUrl = baseUrl + "/exam/api/paper/get?examId=" + examId + "&ts=" + System.currentTimeMillis() + "";
+
+            String answerResp = HttpUrlConnectionUtil.get(getAnswerUrl, null);
+
+            if(!answerResp.startsWith("{\"meta\":{\"total\":")){
+                return;
+            }
+            ExamDTO examDTO = JSONObject.parseObject(answerResp, ExamDTO.class);
+
+
+//                        String realName = realName;
+            StringBuffer postParam = new StringBuffer();
+            //获取ownerId 代表session用户
+
+            String moocId = JsonObjectUtil.getArray(answerResp, "data", 0, "id");
+            postParam.append("{\n" +
+                    "\t\"id\": " + moocId + ",\n" +
+                    "\t\"ownerId\": " + sessionId + ",\n" +
+                    "\t\"username\": \"" + username + "\",\n" +
+                    "\t\"name\": \"" + realName + "\",\n" +
+                    "\t\"examId\": \"" + examId + "\",\n" +
+                    "\t\"courseId\": \"" + courseId + "\",\n" +
+                    "\t\"answers\": {\n");
+            //遍历paper
+            Paper paper = examDTO.getData().get(0);
+            if (paper != null) {
+                if (paper.getBody() != null) {
+                    List<PaperQuestion> paperQuestions = paper.getBody().stream().filter(
+                            (PaperQuestion paperQuestion) -> {
+                                return paperQuestion.getDesc() != null && !paperQuestion.getDesc().equals("");
+                            }
+                    ).collect(Collectors.toList());
+                    int index = 0;
+                    for (PaperQuestion paperQuestion : paperQuestions) {
+                        //单选题 0
+                        if ("0".equals(paperQuestion.getType())) {
+                            List<Question> questions = paperQuestion.getQuestions();
+                            if (questions != null && questions.size() > 0) {
+                                for (Question question : questions) {
+                                    preProcessQuestion(question);
+                                    String answer = "0";
+                                    //处理下单选题 返回答案为 "0" "1" "2" "3"
+                                    //无答案 默认答案选第一个
+                                    if(StringUtils.isNotEmpty(examAnswer.get(question.getQuestion()))){
+                                        answer = question.getBody().getAnswer();
+                                    }
+                                    postParam.append("\"q" + question.getId() + "\":\"" + answer + "\",");
+                                }
+                            }
+                            //去除最后一个,
+                            if (index == paperQuestions.size() - 1) {
+                                postParam.replace(postParam.length() - 1, postParam.length(), "");
+                            }
+                            index++;
+                            //多选题 1
+                        } else if ("1".equals(paperQuestion.getType())) {
+                            List<Question> questions = paperQuestion.getQuestions();
+                            if (questions != null && questions.size() > 0) {
+                                for (Question question : questions) {
+                                    //默认答案 选 第一个 选第三个
+                                    String answer = "[\"0\",\"2\"]";
+                                    if (StringUtils.isNotEmpty(examAnswer.get(question.getQuestion()))) {
+                                        answer = question.getBody().getAnswer();
+                                    }
+                                    postParam.append("\"q" + question.getId() + "\":" + answer + ",");
+                                }
+                                //去除最后一个,
+                                if (index == paperQuestions.size() - 1) {
+                                    postParam.replace(postParam.length() - 1, postParam.length(), "");
+                                }
+                                index++;
+                            }
+                            //判断题 4
+                        } else if ("4".equals(paperQuestion.getType())) {
+                            List<Question> questions = paperQuestion.getQuestions();
+                            if (questions != null && questions.size() > 0) {
+                                for (Question question : questions) {
+                                    //1对 2错
+                                    //默认答案是对
+                                    String answer = "1";
+                                    if (StringUtils.isNotEmpty(examAnswer.get(question.getQuestion()))) {
+                                        answer = question.getBody().getAnswer();
+                                    }
+                                    postParam.append("\"q" + question.getId() + "\":\"" + answer + "\",");
+                                }
+                            }
+                                //去除最后一个,
+                            if (index == paperQuestions.size() - 1) {
+                                postParam.replace(postParam.length() - 1, postParam.length(), "");
+                            }
+                            index++;
+                        }
+                    }
+
+                }
+
+            }
+            postParam.append("\t}\n" +
+                    "}")
+            ;
+            String doExamUrl = baseUrl + "/exam/do/api/submit";
+            String refer = "http://www.cqooc.net/learn/mooc/exam/do?pid="+examId+"&id="+courseId;
+            String userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:73.0) Gecko/20100101 Firefox/73.0";
+            String examResp = HttpUrlConnectionUtil.post(doExamUrl, postParam.toString(), refer, userAgent);
+            if(examResp.contains("{\"code\":1")){
+                logger.info("你的答案已经提交，请不要重复提交");
+                return;
+            }
+            if(examResp.contains("{\"code\":4")){
+                logger.info("大试卷考试时间已过,,,跳过");
+                return;
+            }
+            if(examResp.contains("{\"code\":0")){
+                logger.info("大试卷考试提交成功...");
+                return;
+            }
+            logger.info("大试卷 返回" + examResp);
+            return;
+        }
+    }
+
+    /**
+     * 预处理quesiton
+     * @param question
+     */
+    private void preProcessQuestion(Question question) {
+        String questionProcessed = HtmlUtil.filterTag(question.getQuestion());
+        question.setQuestion(questionProcessed);
+    }
+
+    /**
+     * 试卷生成
+     * @param courseId
+     * @param examId
+     */
+    private boolean generatePaper(String courseId , String examId,String realName) {
+        //申请试卷
+        //http://www.cqooc.net/exam/api/paper/gen
+        String generatePaperUrl = baseUrl + "/exam/api/paper/gen";
+        String generaetPaperPostData = new HashMapUtil().put("courseId", courseId)
+                .put("examId", examId)
+                .put("name", realName)
+                .put("ownerId", sessionId)
+                .put("username", username.toLowerCase())
+                .put("courseId", courseId)
+                .toJsonStr();
+        //{"code":0,"id":537412,"msg":"No error"}
+        String generatePaperResp = HttpUrlConnectionUtil.post(generatePaperUrl, generaetPaperPostData, "http://www.cqooc.net/learn/mooc/exam/do?pid="+examId+"&id="+courseId+"", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.13; rv:73.0) Gecko/20100101 Firefox/73.0");
+        if(generatePaperResp.contains("已经生成过试卷，请联系授课教师")){
+            return true;
+        }
+        if(generatePaperResp.contains("No error")){
+            return true;
+        }
+        requestLogger( "生成试卷失败" , generatePaperUrl ,  generaetPaperPostData , generatePaperResp);
+        return false;
+    }
+
+    /**
+     * 获取课程试卷
+     * @param courseId
+     * @return examId
+     * @throws RetriveExamException
+     */
+    private String getPaper(String courseId)throws  RetriveExamException{
         String getPaperUrl = baseUrl + "/json/exams?select=id,title&status=1&courseId=" + courseId + "&limit=99&sortby=id&reverse=true&ts=" + System.currentTimeMillis() + "";
         String resp = HttpUrlConnectionUtil.get(getPaperUrl, null);
         if(!resp.contains("meta")){
@@ -750,139 +988,16 @@ public class API {
             logger.info("没有大试卷,,跳过...");
         } else{
             String examId = JsonObjectUtil.getArray(resp, "data", 0, "id");
-            System.out.println(("获取到期末考试ID:" + examId));
-            if (examId != null && !examId.equals("")) {
-                System.out.println("正在做大试卷");
-
-                //申请试卷
-                //http://www.cqooc.net/exam/api/paper/gen
-                String generatePaperUrl = baseUrl + "/exam/api/paper/gen";
-                String generaetPaperPostData = new HashMapUtil().put("courseId", courseId)
-                        .put("examId", examId)
-                        .put("name", "庄研怡")
-                        .put("ownerId", sessionId)
-                        .put("username", username.toLowerCase())
-                        .put("courseId", courseId)
-                        .toJsonStr();
-                //{"code":0,"id":537412,"msg":"No error"}
-                String generatePaperResp = HttpUrlConnectionUtil.post(generatePaperUrl, generaetPaperPostData, "http://www.cqooc.net/learn/mooc/exam/do?pid="+examId+"&id="+courseId+"", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.13; rv:73.0) Gecko/20100101 Firefox/73.0");
-                if (!generatePaperResp.contains("No error") && !generatePaperResp.contains("已经生成过试卷，请联系授课教师")) {
-                    System.out.println("生成试卷失败:" + generatePaperResp);
-                    return;
-                }
-
-                //exam/api/paper/get?examId=2559&ts=1575085453963
-                //获取大试卷答案
-                String getAnswerUrl = baseUrl + "/exam/api/paper/get?examId=" + examId + "&ts=" + System.currentTimeMillis() + "";
-
-                String answerResp = HttpUrlConnectionUtil.get(getAnswerUrl, null);
-
-                if(!answerResp.startsWith("{\"meta\":{\"total\":")){
-                  return;
-                }
-                ExamDTO examDTO = JSONObject.parseObject(answerResp, ExamDTO.class);
-
-
-//                        String realName = realName;
-                StringBuffer postParam = new StringBuffer();
-                //获取ownerId 代表session用户
-
-                String moocId = JsonObjectUtil.getArray(answerResp, "data", 0, "id");
-                postParam.append("{\n" +
-                        "\t\"id\": " + moocId + ",\n" +
-                        "\t\"ownerId\": " + sessionId + ",\n" +
-                        "\t\"username\": \"" + username + "\",\n" +
-                        "\t\"name\": \"" + realName + "\",\n" +
-                        "\t\"examId\": \"" + examId + "\",\n" +
-                        "\t\"courseId\": \"" + courseId + "\",\n" +
-                        "\t\"answers\": {\n");
-                //遍历paper
-                Paper paper = examDTO.getData().get(0);
-                if (paper != null) {
-                    if (paper.getBody() != null) {
-                        List<PaperQuestion> paperQuestions = paper.getBody().stream().filter(
-                                (PaperQuestion paperQuestion) -> {
-                                    return paperQuestion.getDesc() != null && !paperQuestion.getDesc().equals("");
-                                }
-                        ).collect(Collectors.toList());
-                        int index = 0;
-                        for (PaperQuestion paperQuestion : paperQuestions) {
-                            //单选题 0
-                            if ("0".equals(paperQuestion.getType())) {
-                                List<Question> questions = paperQuestion.getQuestions();
-                                if (questions != null && questions.size() > 0) {
-                                    for (Question question : questions) {
-                                        //处理下单选题 返回答案为数组类型 ["0"]
-                                        postParam.append("\"q" + question.getId() + "\":\"" + question.getBody().getAnswer().replaceAll("\\[\"", "").replaceAll("\"]", "") + "\",");
-                                    }
-                                }
-                                if (index == paperQuestions.size() - 1) {
-                                    postParam.replace(postParam.length() - 1, postParam.length(), "");
-                                }
-                                index++;
-                                //多选题 1
-                            } else if ("1".equals(paperQuestion.getType())) {
-                                List<Question> questions = paperQuestion.getQuestions();
-                                if (questions != null && questions.size() > 0) {
-                                    for (Question question : questions) {
-                                        postParam.append("\"q" + question.getId() + "\":" + question.getBody().getAnswer() + ",");
-                                    }
-                                }
-                                if (index == paperQuestions.size() - 1) {
-                                    postParam.replace(postParam.length() - 1, postParam.length(), "");
-                                }
-                                index++;
-                                //判断题 4
-                            } else if ("4".equals(paperQuestion.getType())) {
-                                List<Question> questions = paperQuestion.getQuestions();
-                                if (questions != null && questions.size() > 0) {
-                                    for (Question question : questions) {
-                                        if (question.getBody().getAnswer() == null || question.getBody().getAnswer().equals("")) {
-                                            //没有答案 采用默认的答案
-                                            postParam.append("\"q" + question.getId() + "\":\"" + "1" + "\",");
-                                        } else{
-                                            postParam.append("\"q" + question.getId() + "\":\"" + question.getBody().getAnswer().replaceAll("\\[\"", "").replaceAll("\"]", "") + "\",");
-                                        }
-                                    }
-                                }
-                                if (index == paperQuestions.size() - 1) {
-                                    postParam.replace(postParam.length() - 1, postParam.length(), "");
-                                }
-                                index++;
-                            }
-                        }
-
-                    }
-
-                }
-                postParam.append("\t}\n" +
-                        "}")
-                ;
-
-                String doExamUrl = baseUrl + "/exam/api/student/do";
-                String examResp = HttpUrlConnectionUtil.post(doExamUrl, postParam.toString(), null, null);
-                System.out.println("大试卷 返回" + examResp);
-                return;
-            } else {
-                System.out.println("大试卷不存在，不做了");
-                return;
-            }
+            logger.info(("获取到期末考试ID:" + examId));
+            return examId;
         }
-
+        return null;
     }
-
     /**
      * 做用户所有课程
      */
     private void doCourse() {
-        int index = -1;
         for (Course0 course0 : this.courseIng) {
-            index++;
-            //获取真实姓名
-            if (index == 0) {
-                this.realName = course0.getName();
-                logger.info("欢迎您," + realName);
-            }
             String courseId = course0.getCourseId();
 //            获取课程下的所有章节
             List<Chapter> chapters = getAllChapter(courseId);
@@ -894,8 +1009,6 @@ public class API {
             sortChapterById(chapters);
             doChapters(course0, chapters);
             System.out.println(realName + course0.getTitle() + "的测试,讨论,视频,资源已看完 。。。");
-
-
         }
     }
 
@@ -928,6 +1041,15 @@ public class API {
      * @param courseIds
      */
     public void run(String... courseIds) {
+        //导入指定课程
+        try {
+            if(courseIds.length == 0){
+                courseIds = loadCourseIds();
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
         login();
         if (!loginTrue) {
             return;
@@ -942,13 +1064,14 @@ public class API {
         //如果课程名不指定　默认刷全部有效课程
         if (ArrayUtil.isNotEmpty(courseIds)) {
             //进行中的课程定义为分数为0 且课程结束时间大于当前时间 course0.getScore().equals("0") &&
+            String[] finalCourseIds = courseIds;
             this.courseIng = this.allCourse.stream().filter((Course0 course0) -> {
 
                 return course0.getCourse().getEndDate().compareTo("" + System.currentTimeMillis()) > 0;
             }).filter(
                     //      //刷指定课程
                     (Course0 course0) -> {
-                        return Arrays.asList(courseIds).contains(course0.getCourseId());
+                        return Arrays.asList(finalCourseIds).contains(course0.getCourseId());
                     })
                     .collect(Collectors.toList());
         } else {
@@ -967,6 +1090,14 @@ public class API {
         }
         logger.info("准备做课程...");
         logger.info("准备做视频,讨论,测试...");
+
+        //获取真实姓名 提交大试卷依赖
+        getRealName();
+
+        if(doTestOnly){
+            doCourse();
+            return;
+        }
         doCourse();
         logger.info("准备做单元作业...");
         doTask();
@@ -975,12 +1106,28 @@ public class API {
         logger.info(realName + "的课程已全部完成...");
     }
 
+    private void getRealName() {
+        int index = -1;
+        if(CollectionUtils.isNotEmpty(courseIng)){
+            for (Course0 course0 : this.courseIng) {
+                index++;
+                //获取真实姓名
+                if (index == 0) {
+                    this.realName = course0.getName();
+                    logger.info("欢迎您," + realName);
+                    return;
+                }
+            }
+        }
+
+    }
+
     private void doExam() {
         for (Course0 course0 : this.courseIng) {
             String courseId = course0.getCourseId();
             //做大试卷
             try {
-                doExam(courseId);
+                doExam(courseId , realName , examAnswer);
             } catch (RetriveExamException e) {
                 logger.error(e.getMessage()  + " ,,跳过大试卷...");
             }
