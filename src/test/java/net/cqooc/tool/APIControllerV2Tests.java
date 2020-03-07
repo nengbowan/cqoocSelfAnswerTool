@@ -20,7 +20,7 @@ public class APIControllerV2Tests {
 
         String username = "127581201190414";
         String passwd = "Xmer0320";
-        new API(username , passwd).run("334566550");
+        new API(username , passwd).run( );
 //        String username = "127580314180220";
 //        String passwd = "ylx959...";
 //        new API(username , passwd).run("334566955");
